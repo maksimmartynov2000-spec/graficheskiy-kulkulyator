@@ -32,6 +32,8 @@ const G = {
 // Настройки экрана Setup — общие для всех режимов
 const S = {
   io: 'Math',        // Input/Output: Math | Line
+  mode: 'Comp',      // Mode: только Comp (системы счисления не делаются)
+  cplx: 'Real',      // Complex Mode: только Real
   frac: 'd/c',       // Frac Result: d/c | ab/c
   funcType: 'Y=',    // Func Type
   drawType: 'Connect', // Draw Type: Connect | Plot
@@ -50,6 +52,8 @@ const S = {
   ineq: 'Union',     // Ineq Type
   simul: 'On'        // Simul Graph
 };
+
+const S_DEF = { ...S };             // заводские значения (для сброса)
 
 // Переменные A–Z, r, θ
 const VARS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'r', 'θ'];

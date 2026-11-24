@@ -194,6 +194,8 @@ UI.apps.menu = mainMenu;
 // ---------- Setup ----------
 const SETUP_DEF = {
   io: ['Input/Output', ['Math', 'Line']],
+  mode: ['Mode', ['Comp']],
+  cplx: ['Complex Mode', ['Real']],
   frac: ['Frac Result', ['d/c', 'ab/c']],
   funcType: ['Func Type', ['Y=', 'r=', 'Param', 'X=', 'Y>', 'Y<', 'Y≥', 'Y≤']],
   drawType: ['Draw Type', ['Connect', 'Plot']],
@@ -209,7 +211,8 @@ const SETUP_DEF = {
   q1q3: ['Q1Q3 Type', ['Std', 'OnData']],
   simul: ['Simul Graph', ['On', 'Off']]
 };
-const SETUP_RUN = ['io', 'frac', 'funcType', 'drawType', 'deriv', 'angle', 'coord', 'grid', 'axes', 'label', 'disp', 'q1q3'];
+// порядок строк — как у оригинала, чтобы до нужной строки было столько же нажатий ▼
+const SETUP_RUN = ['io', 'mode', 'frac', 'funcType', 'drawType', 'deriv', 'angle', 'cplx', 'coord', 'grid', 'axes', 'label', 'disp', 'q1q3'];
 
 function openSetup(keys, onClose) {
   const scr = {

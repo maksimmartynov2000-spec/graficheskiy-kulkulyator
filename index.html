@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="app-build" content="2026-11-25·e748e3a8">
+<meta name="app-build" content="2026-11-25·31199e7e">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#d9dde3" media="(prefers-color-scheme: light)">
@@ -194,7 +194,7 @@
 
   /* ---------- клавиши ---------- */
   .frow, .nav, .fn, .numpad { display: grid; flex: none; }
-  .frow { grid-template-columns: repeat(6, 1fr); height: calc(var(--rh) * .8); padding: 0 var(--bez); margin-top: calc(var(--gap) * .6); }
+  .frow { grid-template-columns: repeat(6, 1fr); height: calc(var(--rh) * .9); padding: 0 var(--bez); margin-top: calc(var(--gap) * .6); }
   .nav { grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(2, var(--rh)); }
   .fn { grid-template-columns: repeat(6, 1fr); grid-auto-rows: var(--rh2); }
   .numpad { grid-template-columns: repeat(5, 1fr); grid-auto-rows: var(--rh2); }
@@ -208,7 +208,8 @@
     padding: 0 1px calc(var(--kh) * .03);
     overflow: hidden;
   }
-  .frow, .nav { --kh: var(--rh); }
+  .nav { --kh: var(--rh); }
+  .frow { --kh: calc(var(--rh) * .9); }
   .fn, .numpad { --kh: var(--rh2); }
   .lg .ls { color: var(--legend-s); }
   .lg .la { color: var(--legend-a); margin-left: auto; }
@@ -234,7 +235,7 @@
   .key sup { font-size: .68em; line-height: 0; position: relative; top: -.1em; }
   .key.on, .dp.on { filter: brightness(.78); }
   .key.on { top: calc(var(--kh) * .035); box-shadow: 0 calc(var(--kh) * .01) 0 var(--key-edge); }
-  .key.f { border-radius: calc(var(--kh) * .1); font-size: calc(var(--kh) * .22); }
+  .key.f { border-radius: calc(var(--kh) * .1); font-size: calc(var(--kh) * .25); }
   .frow .kc { padding-bottom: calc(var(--gap) * .6); }
   .key.shift { background: linear-gradient(180deg, var(--shift-a), var(--shift-b)); color: var(--shift-text); box-shadow: 0 calc(var(--kh) * .045) 0 var(--shift-edge), 0 calc(var(--kh) * .07) calc(var(--kh) * .08) rgba(0, 0, 0, .28); }
   .key.alpha { background: linear-gradient(180deg, var(--alpha-a), var(--alpha-b)); box-shadow: 0 calc(var(--kh) * .045) 0 var(--alpha-edge), 0 calc(var(--kh) * .07) calc(var(--kh) * .08) rgba(0, 0, 0, .28); }
@@ -387,6 +388,8 @@ const G = {
 // Настройки экрана Setup — общие для всех режимов
 const S = {
   io: 'Math',        // Input/Output: Math | Line
+  mode: 'Comp',      // Mode: только Comp (системы счисления не делаются)
+  cplx: 'Real',      // Complex Mode: только Real
   frac: 'd/c',       // Frac Result: d/c | ab/c
   funcType: 'Y=',    // Func Type
   drawType: 'Connect', // Draw Type: Connect | Plot
@@ -405,6 +408,8 @@ const S = {
   ineq: 'Union',     // Ineq Type
   simul: 'On'        // Simul Graph
 };
+
+const S_DEF = { ...S };             // заводские значения (для сброса)
 
 // Переменные A–Z, r, θ
 const VARS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'r', 'θ'];
@@ -970,8 +975,9 @@ function brent(f, a, b, fa, fb) {
 }
 
 // «Красивое» значение рядом: 0.99999999997 → 1
-function snapNice(x) {
+function snapNice(x, scale) {
   if (x === 0 || !Number.isFinite(x)) return x;
+  if (Math.abs(x) < 1e-11 * (scale || 1)) return 0;
   const r = Number(x.toPrecision(6));
   return Math.abs(r - x) <= 2e-10 * Math.max(1, Math.abs(x)) ? r : x;
 }
@@ -983,7 +989,7 @@ function scanRoots(f, a, b, n) {
   for (let i = 0; i <= n; i++) { const x = a + (b - a) * i / n; xs.push(x); ys.push(f(x)); }
   const add = (x) => {
     if (!Number.isFinite(x)) return;
-    x = snapNice(x);
+    x = snapNice(x, b - a);
     const tol = 1e-9 * Math.max(1, Math.abs(x), (b - a) * 1e-3);
     if (!out.some((r) => Math.abs(r - x) <= tol)) out.push(x);
   };
@@ -1007,7 +1013,7 @@ function scanRoots(f, a, b, n) {
         const ga = g(xs[i - 1]), gb = g(xs[i + 1]);
         if (Number.isFinite(ga) && Number.isFinite(gb) && (ga < 0) !== (gb < 0)) {
           const x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
-          if (Number.isFinite(x) && Math.abs(f(snapNice(x))) <= 1e-10 * Math.max(scale, 1)) add(x);
+          if (Number.isFinite(x) && Math.abs(f(snapNice(x, b - a))) <= 1e-10 * Math.max(scale, 1)) add(x);
         }
       }
     }
@@ -1030,7 +1036,7 @@ function scanExtrema(f, a, b, kind, n) {
     let x;
     if (Number.isFinite(ga) && Number.isFinite(gb) && ga > 0 && gb < 0) x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
     if (x === undefined || !Number.isFinite(x)) x = goldenMax((t) => kind * f(t), xs[i - 1], xs[i + 1]);
-    x = snapNice(x);
+    x = snapNice(x, b - a);
     if (!out.some((t) => Math.abs(t - x) <= 1e-8 * Math.max(1, Math.abs(x)))) out.push(x);
   }
   return out.sort((p, q) => p - q);
@@ -3000,12 +3006,12 @@ function layoutCalc() {
   calc.classList.toggle('land', land);
   let cw, chh, full;
   if (!land) {
-    // книжная: экран сверху, клавиши снизу. 8.8 рядов клавиш: F (0.8) + 2 + 2 + 4
+    // книжная: экран сверху, клавиши снизу. 8.9 ряда клавиш: F (0.9) + 2 + 2 + 4
     const fit = (w) => {
       const pad = Math.max(6, w * 0.026), bez = Math.max(5, w * 0.022);
       const lcdW = w - 2 * pad - 2 * bez, lcdH = lcdW * LH / LW;
       const fixed = 2 * pad + pad * 1.9 + lcdH + 2 * bez + 3;
-      return { pad, bez, fixed, rh: (H - fixed) / 8.8 };
+      return { pad, bez, fixed, rh: (H - fixed) / 8.9 };
     };
     cw = Math.min(W, H * 0.6);
     let f = fit(cw);
@@ -3013,23 +3019,23 @@ function layoutCalc() {
       for (let i = 0; i < 30 && f.rh < cw * 0.118; i++) { cw *= 0.97; f = fit(cw); }
     }
     const rh = Math.min(f.rh, cw * 0.185);
-    chh = f.fixed + rh * 8.8;
+    chh = f.fixed + rh * 8.9;
     full = cw >= W - 1 && chh >= H - 1;
     set({ '--pad': f.pad, '--bez': f.bez, '--gap': Math.max(3, cw * 0.012), '--rh': rh, '--rh2': rh, width: cw, height: chh, '--rw': 'auto' });
   } else {
     // альбомная: слева экран, F1–F6 и блок курсора; справа остальные клавиши
     const pad = Math.max(6, Math.min(W, H) * 0.022), bez = Math.max(5, pad * 0.85);
     const gapX = pad * 1.4, head = pad * 1.9;
-    const rhMin = Math.max(42, H * 0.1);
-    let lcdW = Math.min(W * 0.53, (H - 2 * pad - head - 2 * bez - 3 - 2.8 * rhMin) * LW / LH);
+    const rhMin = Math.max(46, H * 0.12);
+    let lcdW = Math.min(W * 0.53, (H - 2 * pad - head - 2 * bez - 3 - 2.9 * rhMin) * LW / LH);
     lcdW = Math.max(200, lcdW);
     const lcdH = lcdW * LH / LW;
     const leftW = lcdW + 2 * bez;
     const rw = Math.min(W - 2 * pad - gapX - leftW, leftW * 1.2, H * 1.1);
     const rh2 = Math.min((H - 2 * pad) / 6, rw / 6 * 1.35);
-    const rh = Math.min((H - 2 * pad - head - lcdH - 2 * bez - 3) / 2.8, leftW / 6 * 1.05, rh2 * 1.12);
+    const rh = Math.min((H - 2 * pad - head - lcdH - 2 * bez - 3) / 2.9, leftW / 6 * 1.05, rh2 * 1.12);
     cw = 2 * pad + leftW + gapX + rw;
-    chh = Math.max(head + lcdH + 2 * bez + 3 + rh * 2.8, rh2 * 6) + 2 * pad;
+    chh = Math.max(head + lcdH + 2 * bez + 3 + rh * 2.9, rh2 * 6) + 2 * pad;
     full = cw >= W - 1 && chh >= H - 1;
     set({ '--pad': pad, '--bez': bez, '--gap': Math.max(3, rw * 0.012), '--rh': rh, '--rh2': rh2, width: cw, height: chh, '--rw': rw.toFixed(2) + 'px' });
     calc.querySelector('.left').style.width = leftW.toFixed(2) + 'px';
@@ -3246,6 +3252,8 @@ UI.apps.menu = mainMenu;
 // ---------- Setup ----------
 const SETUP_DEF = {
   io: ['Input/Output', ['Math', 'Line']],
+  mode: ['Mode', ['Comp']],
+  cplx: ['Complex Mode', ['Real']],
   frac: ['Frac Result', ['d/c', 'ab/c']],
   funcType: ['Func Type', ['Y=', 'r=', 'Param', 'X=', 'Y>', 'Y<', 'Y≥', 'Y≤']],
   drawType: ['Draw Type', ['Connect', 'Plot']],
@@ -3261,7 +3269,8 @@ const SETUP_DEF = {
   q1q3: ['Q1Q3 Type', ['Std', 'OnData']],
   simul: ['Simul Graph', ['On', 'Off']]
 };
-const SETUP_RUN = ['io', 'frac', 'funcType', 'drawType', 'deriv', 'angle', 'coord', 'grid', 'axes', 'label', 'disp', 'q1q3'];
+// порядок строк — как у оригинала, чтобы до нужной строки было столько же нажатий ▼
+const SETUP_RUN = ['io', 'mode', 'frac', 'funcType', 'drawType', 'deriv', 'angle', 'cplx', 'coord', 'grid', 'axes', 'label', 'disp', 'q1q3'];
 
 function openSetup(keys, onClose) {
   const scr = {
@@ -3379,7 +3388,7 @@ function matView(title, m) {
       for (let c = 0; c < 3; c++) {
         const j = this.left + c;
         if (j >= m[0].length) break;
-        lcd.text(40 + c * 114 + 78, 24, String(j + 1));
+        lcd.text(36 + c * 114 + 110 - String(j + 1).length * 18, 24, String(j + 1));
       }
       for (let r = 0; r < 4; r++) {
         const i = this.top + r;
@@ -3404,6 +3413,7 @@ function matView(title, m) {
 
 const T = (tpl, line) => ({ tpl, line });
 const MATH_MENU = [
+  null,                                // на этом месте у оригинала шаблоны матриц (MAT/VCT)
   mi('logab', T('logab', 'logab(')), mi('Abs', T('abs', 'Abs ')), mi('d/dx', T('ddx', 'd/dx(')), mi('d²/dx²', T('d2dx', 'd²/dx²(')),
   mi('∫dx', T('int', '∫(')), mi('Σ(', T('sum', 'Σ('))
 ];
@@ -3546,6 +3556,7 @@ const runApp = {
         ed.clear();
         return;
       case 'SD': this.toggleSD(k.shift); return;
+      case '4': if (k.shift) { openCatalog(ed); return; } break;
       default:
     }
     if (!k.shift && !k.alpha && (k.id === 'UP' || k.id === 'DOWN')) {
@@ -3635,6 +3646,172 @@ const runApp = {
   }
 };
 UI.apps.run = runApp;
+
+// ══════ 62-mat.js — редактор матриц (Run-Matrix → ▶MAT/VCT) и каталог команд (SHIFT 4) ══════
+
+const MAT_NAMES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+// Таблица матрицы с правкой ячеек
+function matEdit(name) {
+  const m = mem.mats[name];
+  pushModal({
+    r: 0, c: 0, top: 0, left: 0, field: null,
+    menu: null,
+    init() {
+      const done = () => this.menu.reset();
+      this.menu = new FMenu([
+        null,
+        mi('ROW', [
+          mi('DELETE', () => { if (m.length > 1) { m.splice(this.r, 1); this.r = Math.min(this.r, m.length - 1); } done(); }),
+          mi('INSERT', () => { m.splice(this.r, 0, m[0].map(() => RI(0))); done(); }),
+          mi('ADD', () => { m.splice(this.r + 1, 0, m[0].map(() => RI(0))); this.r++; this.see(); done(); })
+        ]),
+        mi('COLUMN', [
+          mi('DELETE', () => { if (m[0].length > 1) { for (const row of m) row.splice(this.c, 1); this.c = Math.min(this.c, m[0].length - 1); } done(); }),
+          mi('INSERT', () => { for (const row of m) row.splice(this.c, 0, RI(0)); done(); }),
+          mi('ADD', () => { for (const row of m) row.splice(this.c + 1, 0, RI(0)); this.c++; this.see(); done(); })
+        ]),
+        mi('EDIT', () => { this.field = new NumField(); })
+      ]);
+      return this;
+    },
+    see() {
+      if (this.r < this.top) this.top = this.r;
+      if (this.r > this.top + 3) this.top = this.r - 3;
+      if (this.c < this.left) this.left = this.c;
+      if (this.c > this.left + 2) this.left = this.c - 2;
+    },
+    key(k) {
+      if (this.field) {
+        this.field.key(k, (x) => {
+          m[this.r][this.c] = x; this.field = null;
+          if (this.c + 1 < m[0].length) this.c++; else if (this.r + 1 < m.length) { this.r++; this.c = 0; }
+          this.see();
+        }, () => { this.field = null; });
+        return;
+      }
+      const f = fIndex(k);
+      if (f >= 0) { const it = this.menu.press(f); if (it && it.fn) it.fn(); return; }
+      if (k.id === 'UP') this.r = Math.max(0, this.r - 1);
+      else if (k.id === 'DOWN') this.r = Math.min(m.length - 1, this.r + 1);
+      else if (k.id === 'LEFT') this.c = Math.max(0, this.c - 1);
+      else if (k.id === 'RIGHT') this.c = Math.min(m[0].length - 1, this.c + 1);
+      else if (k.id === 'EXIT') { if (!this.menu.back()) popModal(); return; }
+      else if (startsNumber(k)) { this.field = new NumField(); this.field.key(k); return; }
+      this.see();
+    },
+    draw() {
+      lcd.rect(0, 23, LW, LH - 23, '#fff');
+      lcd.text(4, 24, name);
+      for (let c = 0; c < 3; c++) {
+        const j = this.left + c;
+        if (j >= m[0].length) break;
+        lcd.text(36 + c * 114 + 110 - String(j + 1).length * 18, 24, String(j + 1));
+      }
+      for (let r = 0; r < 4; r++) {
+        const i = this.top + r;
+        if (i >= m.length) break;
+        const y = 48 + r * 24;
+        lcd.text(4, y, String(i + 1));
+        for (let c = 0; c < 3; c++) {
+          const j = this.left + c;
+          if (j >= m[0].length) break;
+          const s = fmtFit(m[i][j].v, 6), x = 36 + c * 114;
+          const on = i === this.r && j === this.c;
+          if (on) lcd.rect(x, y, 112, 24, HILITE);
+          lcd.text(x + 110 - [...s].length * 18, y, s, { color: on ? '#fff' : '#000' });
+        }
+      }
+      lcd.frame(33, 47, LW - 34, 98, '#000', 1);
+      if (this.field) this.field.draw(4, 180, LW - 8);
+      else {
+        const lay = layStatic(numRow(m[this.r][this.c], 'auto', false));
+        drawLay(lay, LW - 4 - lay.w, 180);
+      }
+      lcd.fmenu(this.menu.labels());
+    }
+  }.init());
+}
+
+// Список матриц Mat A…Z
+function openMatList() {
+  const dims = (n) => (mem.mats[n] ? mem.mats[n].length + '×' + mem.mats[n][0].length : 'None');
+  const define = (n, then) => numDialog('Dimension m×n', [['m', 2], ['n', 2]], (v) => {
+    const [r, c] = v.map(Math.round);
+    if (!(r >= 1 && r <= 20 && c >= 1 && c <= 20)) { errorBox('Dimension ERROR'); return; }
+    const old = mem.mats[n];
+    mem.mats[n] = Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => (old && old[i] && old[i][j]) || RI(0)));
+    if (then) then();
+  });
+  pushModal({
+    sel: 0, top: 0,
+    key(k) {
+      const n = MAT_NAMES[this.sel], f = fIndex(k);
+      if (f === 0) { if (mem.mats[n]) confirmBox(['Delete Matrix?', ''], () => { delete mem.mats[n]; }); return; }
+      if (f === 1) { confirmBox(['Delete All', 'Matrices?'], () => { mem.mats = {}; }); return; }
+      if (f === 2) { define(n); return; }
+      if (k.id === 'UP') this.sel = (this.sel + 25) % 26;
+      else if (k.id === 'DOWN') this.sel = (this.sel + 1) % 26;
+      else if (k.id === 'EXE') { if (mem.mats[n]) matEdit(n); else define(n, () => matEdit(n)); return; }
+      else if (k.id === 'EXIT') { popModal(); return; }
+      if (this.sel < this.top) this.top = this.sel;
+      if (this.sel > this.top + 5) this.top = this.sel - 5;
+    },
+    draw() {
+      lcd.rect(0, 23, LW, LH - 23, '#fff');
+      lcd.text(0, 24, 'Matrix');
+      for (let r = 0; r < 6; r++) {
+        const i = this.top + r, n = MAT_NAMES[i], y = 48 + r * 24;
+        if (i === this.sel) lcd.rect(0, y, LW, 24, HILITE);
+        const ink = i === this.sel ? '#fff' : '#000';
+        lcd.text(18, y, 'Mat ' + n, { color: ink });
+        lcd.text(9 * 18, y, ':' + dims(n), { color: ink });
+      }
+      lcd.fmenu([{ l: 'DELETE', k: 'cmd' }, { l: 'DEL-ALL', k: 'cmd' }, { l: 'DIM', k: 'cmd' }]);
+    }
+  });
+}
+
+// ---------- каталог команд (SHIFT 4) ----------
+// Список команд по алфавиту; клавиша с буквой — переход к букве, EXE — вставить в выражение
+function openCatalog(ed) {
+  const names = new Map();
+  for (const t of [...PRE.keys(), ...FNA.keys(), 'Ans', 'List ', 'Mat ', 'Ran# ', 'Int÷', 'Rmdr', '!', 'π', '%', '°']) {
+    if (t === G.NEG || t === G.TEN || t === G.CBRT || t === '√') continue;
+    names.set(t, t);
+  }
+  names.set(G.PERM, 'nPr'); names.set(G.COMB, 'nCr'); names.set(G.YV, 'Y (graph)');
+  const items = [...names.entries()].map(([tok, show]) => ({ tok, show: show.trim() })).sort((a, b) => a.show.localeCompare(b.show, 'en', { sensitivity: 'base' }));
+  pushModal({
+    sel: 0, top: 0,
+    key(k) {
+      const n = items.length;
+      if (k.id === 'UP') this.sel = (this.sel + n - 1) % n;
+      else if (k.id === 'DOWN') this.sel = (this.sel + 1) % n;
+      else if (k.id === 'EXE' || k.id === 'F1') { popModal(); edInsert(ed, items[this.sel].tok); return; }
+      else if (k.id === 'EXIT' || k.id === 'AC') { popModal(); return; }
+      else {
+        const ch = ALPHA_KEY[k.id];
+        const i = ch ? items.findIndex((it) => it.show[0].toUpperCase() === ch) : -1;
+        if (i >= 0) this.sel = i;
+      }
+      if (this.sel < this.top) this.top = this.sel;
+      if (this.sel > this.top + 5) this.top = this.sel - 5;
+    },
+    draw() {
+      lcd.rect(0, 23, LW, LH - 23, '#fff');
+      lcd.text(0, 24, 'Catalog');
+      for (let r = 0; r < 6; r++) {
+        const i = this.top + r;
+        if (i >= items.length) break;
+        const y = 48 + r * 24;
+        if (i === this.sel) lcd.rect(0, y, LW, 24, HILITE);
+        lcd.text(18, y, items[i].show, { color: i === this.sel ? '#fff' : '#000' });
+      }
+      lcd.fmenu([{ l: 'INPUT', k: 'cmd' }]);
+    }
+  });
+}
 
 // ══════ 65-func.js — функции Y1…Y20, окно просмотра (V-Window), построение, общий список функций ══════
 
@@ -3731,10 +3908,12 @@ function sampleX(f) {                 // x = f(y)
 }
 function sampleT(c, polar) {           // параметрическая или полярная
   const pts = [];
-  const n = Math.min(6000, Math.floor((VW.tmax - VW.tmin) / VW.tptch + 1e-9));
-  if (!(VW.tptch > 0) || !(n >= 0)) return pts;
+  // рисуем вчетверо мельче шага (кривая выходит гладкой), трассировка идёт с шагом ptch
+  const steps = Math.floor((VW.tmax - VW.tmin) / VW.tptch + 1e-9);
+  if (!(VW.tptch > 0) || !(steps >= 0)) return pts;
+  const sub = steps > 1500 ? 1 : 4, n = Math.min(6000, steps * sub);
   for (let i = 0; i <= n; i++) {
-    const t = VW.tmin + i * VW.tptch;
+    const t = VW.tmin + i * VW.tptch / sub;
     let x, y;
     if (polar) { const r = c.f(t); x = r * fCos(t); y = r * fSin(t); } else { x = c.f(t); y = c.g(t); }
     if (Number.isFinite(x) && Number.isFinite(y)) pts.push([clampP(X2P(x)), clampP(Y2P(y))]); else if (pts.length && pts[pts.length - 1]) pts.push(null);
@@ -3906,6 +4085,7 @@ class FuncList {
         case 'AC': if (ed.empty) this.stopEdit(); else ed.clear(); return;
         case 'OPTN': this.menu = new FMenu(FN_OPTN); this.menuKind = 'optn'; return;
         case 'VARS': if (!k.shift) { this.menu = new FMenu(VARS_RUN); this.menuKind = 'vars'; } return;
+        case '4': if (k.shift) { openCatalog(ed); return; } break;
         default:
       }
       if (!k.shift && !k.alpha && (k.id === 'UP' || k.id === 'DOWN')) {
@@ -4299,10 +4479,12 @@ const graphApp = {
   moveTr(d) {
     const s = this.g, tr = s.tr;
     if (tr.t !== undefined) tr.t = Math.max(VW.tmin, Math.min(VW.tmax, r15(tr.t + d * VW.tptch)));
-    else if (tr.y !== undefined) tr.y = r15(tr.y + d * yDot());
+    else if (tr.y !== undefined) { const dot = yDot(); tr.y = r15(VW.ymin + (Math.round((tr.y - VW.ymin) / dot) + d) * dot); }
     else {
-      tr.x = r15(tr.x + d * xDot());
-      if (Math.abs(tr.x) < xDot() * 1e-6) tr.x = 0;
+      // шаг по точкам экрана: считаем от Xmin, чтобы не копилась погрешность (X=1, а не 0.999…)
+      const dot = xDot(), n = (tr.x - VW.xmin) / dot;
+      tr.x = Math.abs(n - Math.round(n)) < 1e-6 ? r15(VW.xmin + (Math.round(n) + d) * dot) : r15(tr.x + d * dot);
+      if (Math.abs(tr.x) < dot * 1e-6) tr.x = 0;
       const px = X2P(tr.x);
       if (px < 0 || px > LW) { this.pan(d * 24, 0); }
     }
@@ -4677,6 +4859,222 @@ const graphApp = {
   }
 };
 UI.apps.graph = graphApp;
+
+// ══════ 75-table.js — режим Table: таблица значений функций ══════
+
+const TBL = { start: 1, end: 5, step: 1 };
+
+const tableApp = {
+  list: null, mode: 'list',
+  xs: [], cols: [], r: 0, c: 0, top: 0, left: 0, field: null, menu: null, plot: null,
+
+  enter() {
+    if (!this.list) {
+      this.list = new FuncList({
+        title: 'Table Func',
+        onExe: () => this.make(),
+        menu: (l) => [
+          mi('SELECT', () => l.select()),
+          mi('DELETE', () => l.del()),
+          mi('TYPE', [mi('Y=', () => { S.funcType = 'Y='; l.base.reset(); })]),
+          mi('TOOL', [{ l: 'STYLE', get sub() { return l.styleMenu(); } }, { l: 'COLOR', get sub() { return l.colorMenu(); } }]),
+          mi('SET', () => this.setRange()),
+          mi('TABLE', () => this.make())
+        ]
+      });
+    }
+    this.mode = 'list';
+  },
+  setup() { return ['io', 'angle', 'disp']; },
+  onSetup() { if (this.mode === 'table') this.fill(); },
+
+  setRange() {
+    numDialog('Table Setting   X', [['Start', TBL.start], ['End', TBL.end], ['Step', TBL.step]], (v) => {
+      if (v.every(Number.isFinite)) { TBL.start = v[0]; TBL.end = v[1]; TBL.step = v[2]; }
+    });
+  },
+
+  // Построить таблицу по Start/End/Step
+  make() {
+    const { start, end, step } = TBL;
+    if (step === 0 || (end - start) / step < 0) fail('Range ERROR');
+    const n = Math.floor((end - start) / step + 1e-9) + 1;
+    if (n > 999) fail('Memory ERROR');
+    this.cols = [];
+    mem.fn.forEach((fn, i) => { if (fn.sel && fnDefined(fn) && fnIsY(fn)) { fnGet(i); this.cols.push(i); } });
+    if (!this.cols.length) fail('No Variable');
+    this.xs = Array.from({ length: n }, (_, k) => r15(start + k * step));
+    this.r = 0; this.c = 0; this.top = 0; this.left = 0; this.field = null;
+    this.mode = 'table';
+    this.menu = new FMenu([
+      mi('FORMULA', () => { this.mode = 'list'; }),
+      mi('DELETE', () => confirmBox(['Delete Table?', ''], () => { this.mode = 'list'; })),
+      mi('ROW', [mi('DELETE', () => this.rowDel()), mi('INSERT', () => this.rowIns(0)), mi('ADD', () => this.rowIns(1))]),
+      mi('EDIT', () => { if (this.c === 0) { this.field = new NumField(); } }),
+      mi('GPH-CON', () => this.graph(true)),
+      mi('GPH-PLT', () => this.graph(false))
+    ]);
+    this.fill();
+  },
+  fill() {
+    this.ys = this.cols.map((i) => { const f = fnGet(i).f; return this.xs.map((x) => f(x)); });
+  },
+  value(r, c) { return c === 0 ? this.xs[r] : this.ys[c - 1][r]; },
+  rowDel() { if (this.xs.length > 1) { this.xs.splice(this.r, 1); this.r = Math.min(this.r, this.xs.length - 1); this.fill(); } this.menu.reset(); },
+  rowIns(after) { this.xs.splice(this.r + after, 0, this.xs[this.r]); this.r += after; this.fill(); this.menu.reset(); },
+  graph(connect) {
+    if (!vwOk()) fail('Range ERROR');
+    const app = this;
+    pushModal({
+      key(k) { if (k.id === 'EXIT' || k.id === 'AC') popModal(); },
+      draw() {
+        const g = lcd.g;
+        lcd.rect(0, 23, LW, LH - 23, '#fff');
+        lcd.clip(0, GA.top, LW, LH - GA.top);
+        drawAxes();
+        app.cols.forEach((i, ci) => {
+          const fn = mem.fn[i], color = COLORS[fn.color];
+          const pts = app.xs.map((x, r) => (Number.isFinite(app.ys[ci][r]) ? [clampP(X2P(x)), clampP(Y2P(app.ys[ci][r]))] : null));
+          if (connect) { const sv = S.drawType; S.drawType = 'Connect'; strokePts(pts, color, fn.style); S.drawType = sv; }
+          g.fillStyle = color;
+          for (const p of pts) if (p) g.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
+        });
+        lcd.unclip();
+      }
+    });
+  },
+
+  key(k) {
+    if (this.mode === 'list') { this.list.key(k); return; }
+    if (this.field) {
+      this.field.key(k, (x) => { this.xs[this.r] = x.v; this.field = null; this.fill(); if (this.r + 1 < this.xs.length) this.r++; this.see(); }, () => { this.field = null; });
+      return;
+    }
+    const f = fIndex(k);
+    if (f >= 0) { const it = this.menu.press(f); if (it && it.fn) it.fn(); return; }
+    const nr = this.xs.length, nc = this.cols.length + 1;
+    switch (k.id) {
+      case 'UP': this.r = (this.r + nr - 1) % nr; break;
+      case 'DOWN': this.r = (this.r + 1) % nr; break;
+      case 'LEFT': this.c = Math.max(0, this.c - 1); break;
+      case 'RIGHT': this.c = Math.min(nc - 1, this.c + 1); break;
+      case 'EXIT': if (!this.menu.back()) this.mode = 'list'; return;
+      case 'DEL': this.rowDel(); return;
+      default:
+        if (this.c === 0 && startsNumber(k)) { this.field = new NumField(); this.field.key(k); }
+        return;
+    }
+    this.see();
+  },
+  see() {
+    if (this.r < this.top) this.top = this.r;
+    if (this.r > this.top + 4) this.top = this.r - 4;
+    // столбец X всегда на экране, функции прокручиваются
+    if (this.c > 0) {
+      if (this.c - 1 < this.left) this.left = this.c - 1;
+      if (this.c - 1 > this.left + 2) this.left = this.c - 3;
+    }
+  },
+
+  draw() {
+    if (this.mode === 'list') { this.list.draw(); return; }
+    statusBar(stdTags());
+    const CWD = 96;
+    const head = (ci) => (ci === 0 ? 'X' : fnLabel(this.cols[ci - 1], 'Y=', 0));
+    const visible = [0];
+    for (let j = 0; j < 3 && this.left + j < this.cols.length; j++) visible.push(this.left + j + 1);
+    visible.forEach((ci, vx) => {
+      const x = vx * CWD, h = head(ci);
+      lcd.text(x + (CWD - h.length * 18) / 2, 24, h, ci ? { color: COLORS[mem.fn[this.cols[ci - 1]].color] } : undefined);
+      for (let rr = 0; rr < 5; rr++) {
+        const r = this.top + rr;
+        if (r >= this.xs.length) break;
+        const v = this.value(r, ci), s = Number.isFinite(v) ? fmtFit(v, 5) : 'ERROR';
+        const y = 48 + rr * 24, on = r === this.r && ci === this.c;
+        if (on) lcd.rect(x + 1, y, CWD - 2, 24, HILITE);
+        lcd.text(x + CWD - 4 - [...s].length * 18, y, s, { color: on ? '#fff' : '#000' });
+      }
+      if (vx) lcd.line(x + .5, 24, x + .5, 168, '#000', 1);
+    });
+    lcd.line(0, 47.5, LW, 47.5, '#000', 1);
+    lcd.line(0, 168.5, LW, 168.5, '#000', 1);
+    if (this.field) this.field.draw(4, 180, LW - 8);
+    else {
+      const v = this.value(this.r, this.c), s = Number.isFinite(v) ? fmtNum(v) : 'ERROR';
+      lcd.text(LW - 4 - [...s].length * 18, 169, s);
+    }
+    lcd.fmenu(this.menu.labels());
+  },
+
+  save() { return { ...TBL }; },
+  load(st) { for (const k of ['start', 'end', 'step']) if (Number.isFinite(st[k])) TBL[k] = st[k]; }
+};
+UI.apps.table = tableApp;
+
+// ══════ 90-system.js — режим System: версия и сброс памяти ══════
+
+function resetSetup() {
+  Object.assign(S, S_DEF);
+  vwSet('INITIAL');
+  ZOOM_FACT.x = 2; ZOOM_FACT.y = 2;
+  plotVer++;
+}
+function resetMain() {
+  mem.vars = {}; fv.fill(0);
+  mem.ans = null; mem.listAns = null; mem.matAns = null;
+  mem.lists = []; mem.listSub = []; mem.mats = {};
+  mem.fn = Array.from({ length: 20 }, (_, i) => newFn(i));
+  fnTouch(); plotVer++;
+  for (const id in UI.apps) if (UI.apps[id].reset) UI.apps[id].reset();
+}
+
+const systemApp = {
+  menu: null, page: 'main',
+  enter() {
+    this.page = 'main';
+    const done = (text) => () => infoBox([text, '', 'Press:[EXIT]']);
+    this.menu = new FMenu([
+      null, null, null,
+      mi('VERSION', () => { this.page = 'version'; }),
+      mi('RESET', [
+        mi('SETUP', () => confirmBox(['Reset Setup Data?', ''], () => { resetSetup(); done('Reset!')(); })),
+        mi('MAIN', () => confirmBox(['Reset Main', 'Memories?'], () => { resetMain(); done('Reset!')(); })),
+        null, null, null,
+        mi('ALL', () => confirmBox(['Initialize All?', ''], () => { resetSetup(); resetMain(); done('Initialized!')(); }))
+      ])
+    ]);
+  },
+  key(k) {
+    if (this.page === 'version') { if (k.id === 'EXIT' || k.id === 'EXE' || k.id === 'AC') this.page = 'main'; return; }
+    const f = fIndex(k);
+    if (f >= 0) { const it = this.menu.press(f); if (it && it.fn) it.fn(); return; }
+    if (k.id === 'EXIT') this.menu.back();
+  },
+  draw() {
+    statusBar([]);
+    if (this.page === 'version') {
+      const b = (document.querySelector('meta[name="app-build"]') || {}).content || '';
+      lcd.text(0, 24, 'Version');
+      lcd.text(18, 72, 'Graphing Calculator');
+      lcd.text(18, 96, 'Build');
+      lcd.mini(18, 124, b, { px: 15 });
+      lcd.text(18, 168, 'Press:[EXIT]');
+      return;
+    }
+    lcd.text(0, 24, 'System Manager');
+    if (this.menu.depth === 1) {
+      lcd.text(18, 72, 'F4:Version');
+      lcd.text(18, 96, 'F5:Reset');
+    } else {
+      lcd.text(18, 72, 'F1:Setup Data');
+      lcd.text(18, 96, 'F2:Main Memory');
+      lcd.text(18, 120, 'F6:Initialize All');
+    }
+    lcd.fmenu(this.menu.labels());
+  }
+};
+UI.apps.system = systemApp;
+runApp.reset = function () { this.hist = []; this.sel = -1; if (this.ed) this.ed.clear(); };
 
 // ══════ 95-boot.js — запуск: хранилище, тема, самообновление, работа без интернета ══════
 

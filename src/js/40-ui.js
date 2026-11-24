@@ -342,12 +342,12 @@ function layoutCalc() {
   calc.classList.toggle('land', land);
   let cw, chh, full;
   if (!land) {
-    // книжная: экран сверху, клавиши снизу. 8.8 рядов клавиш: F (0.8) + 2 + 2 + 4
+    // книжная: экран сверху, клавиши снизу. 8.9 ряда клавиш: F (0.9) + 2 + 2 + 4
     const fit = (w) => {
       const pad = Math.max(6, w * 0.026), bez = Math.max(5, w * 0.022);
       const lcdW = w - 2 * pad - 2 * bez, lcdH = lcdW * LH / LW;
       const fixed = 2 * pad + pad * 1.9 + lcdH + 2 * bez + 3;
-      return { pad, bez, fixed, rh: (H - fixed) / 8.8 };
+      return { pad, bez, fixed, rh: (H - fixed) / 8.9 };
     };
     cw = Math.min(W, H * 0.6);
     let f = fit(cw);
@@ -355,23 +355,23 @@ function layoutCalc() {
       for (let i = 0; i < 30 && f.rh < cw * 0.118; i++) { cw *= 0.97; f = fit(cw); }
     }
     const rh = Math.min(f.rh, cw * 0.185);
-    chh = f.fixed + rh * 8.8;
+    chh = f.fixed + rh * 8.9;
     full = cw >= W - 1 && chh >= H - 1;
     set({ '--pad': f.pad, '--bez': f.bez, '--gap': Math.max(3, cw * 0.012), '--rh': rh, '--rh2': rh, width: cw, height: chh, '--rw': 'auto' });
   } else {
     // альбомная: слева экран, F1–F6 и блок курсора; справа остальные клавиши
     const pad = Math.max(6, Math.min(W, H) * 0.022), bez = Math.max(5, pad * 0.85);
     const gapX = pad * 1.4, head = pad * 1.9;
-    const rhMin = Math.max(42, H * 0.1);
-    let lcdW = Math.min(W * 0.53, (H - 2 * pad - head - 2 * bez - 3 - 2.8 * rhMin) * LW / LH);
+    const rhMin = Math.max(46, H * 0.12);
+    let lcdW = Math.min(W * 0.53, (H - 2 * pad - head - 2 * bez - 3 - 2.9 * rhMin) * LW / LH);
     lcdW = Math.max(200, lcdW);
     const lcdH = lcdW * LH / LW;
     const leftW = lcdW + 2 * bez;
     const rw = Math.min(W - 2 * pad - gapX - leftW, leftW * 1.2, H * 1.1);
     const rh2 = Math.min((H - 2 * pad) / 6, rw / 6 * 1.35);
-    const rh = Math.min((H - 2 * pad - head - lcdH - 2 * bez - 3) / 2.8, leftW / 6 * 1.05, rh2 * 1.12);
+    const rh = Math.min((H - 2 * pad - head - lcdH - 2 * bez - 3) / 2.9, leftW / 6 * 1.05, rh2 * 1.12);
     cw = 2 * pad + leftW + gapX + rw;
-    chh = Math.max(head + lcdH + 2 * bez + 3 + rh * 2.8, rh2 * 6) + 2 * pad;
+    chh = Math.max(head + lcdH + 2 * bez + 3 + rh * 2.9, rh2 * 6) + 2 * pad;
     full = cw >= W - 1 && chh >= H - 1;
     set({ '--pad': pad, '--bez': bez, '--gap': Math.max(3, rw * 0.012), '--rh': rh, '--rh2': rh2, width: cw, height: chh, '--rw': rw.toFixed(2) + 'px' });
     calc.querySelector('.left').style.width = leftW.toFixed(2) + 'px';

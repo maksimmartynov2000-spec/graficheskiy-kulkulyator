@@ -93,10 +93,12 @@ function sampleX(f) {                 // x = f(y)
 }
 function sampleT(c, polar) {           // параметрическая или полярная
   const pts = [];
-  const n = Math.min(6000, Math.floor((VW.tmax - VW.tmin) / VW.tptch + 1e-9));
-  if (!(VW.tptch > 0) || !(n >= 0)) return pts;
+  // рисуем вчетверо мельче шага (кривая выходит гладкой), трассировка идёт с шагом ptch
+  const steps = Math.floor((VW.tmax - VW.tmin) / VW.tptch + 1e-9);
+  if (!(VW.tptch > 0) || !(steps >= 0)) return pts;
+  const sub = steps > 1500 ? 1 : 4, n = Math.min(6000, steps * sub);
   for (let i = 0; i <= n; i++) {
-    const t = VW.tmin + i * VW.tptch;
+    const t = VW.tmin + i * VW.tptch / sub;
     let x, y;
     if (polar) { const r = c.f(t); x = r * fCos(t); y = r * fSin(t); } else { x = c.f(t); y = c.g(t); }
     if (Number.isFinite(x) && Number.isFinite(y)) pts.push([clampP(X2P(x)), clampP(Y2P(y))]); else if (pts.length && pts[pts.length - 1]) pts.push(null);
@@ -268,6 +270,7 @@ class FuncList {
         case 'AC': if (ed.empty) this.stopEdit(); else ed.clear(); return;
         case 'OPTN': this.menu = new FMenu(FN_OPTN); this.menuKind = 'optn'; return;
         case 'VARS': if (!k.shift) { this.menu = new FMenu(VARS_RUN); this.menuKind = 'vars'; } return;
+        case '4': if (k.shift) { openCatalog(ed); return; } break;
         default:
       }
       if (!k.shift && !k.alpha && (k.id === 'UP' || k.id === 'DOWN')) {

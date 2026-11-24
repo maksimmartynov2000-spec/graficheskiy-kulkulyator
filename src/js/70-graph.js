@@ -270,10 +270,12 @@ const graphApp = {
   moveTr(d) {
     const s = this.g, tr = s.tr;
     if (tr.t !== undefined) tr.t = Math.max(VW.tmin, Math.min(VW.tmax, r15(tr.t + d * VW.tptch)));
-    else if (tr.y !== undefined) tr.y = r15(tr.y + d * yDot());
+    else if (tr.y !== undefined) { const dot = yDot(); tr.y = r15(VW.ymin + (Math.round((tr.y - VW.ymin) / dot) + d) * dot); }
     else {
-      tr.x = r15(tr.x + d * xDot());
-      if (Math.abs(tr.x) < xDot() * 1e-6) tr.x = 0;
+      // шаг по точкам экрана: считаем от Xmin, чтобы не копилась погрешность (X=1, а не 0.999…)
+      const dot = xDot(), n = (tr.x - VW.xmin) / dot;
+      tr.x = Math.abs(n - Math.round(n)) < 1e-6 ? r15(VW.xmin + (Math.round(n) + d) * dot) : r15(tr.x + d * dot);
+      if (Math.abs(tr.x) < dot * 1e-6) tr.x = 0;
       const px = X2P(tr.x);
       if (px < 0 || px > LW) { this.pan(d * 24, 0); }
     }

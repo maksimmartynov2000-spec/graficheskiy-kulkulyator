@@ -70,7 +70,7 @@ function matView(title, m) {
       for (let c = 0; c < 3; c++) {
         const j = this.left + c;
         if (j >= m[0].length) break;
-        lcd.text(40 + c * 114 + 78, 24, String(j + 1));
+        lcd.text(36 + c * 114 + 110 - String(j + 1).length * 18, 24, String(j + 1));
       }
       for (let r = 0; r < 4; r++) {
         const i = this.top + r;
@@ -95,6 +95,7 @@ function matView(title, m) {
 
 const T = (tpl, line) => ({ tpl, line });
 const MATH_MENU = [
+  null,                                // на этом месте у оригинала шаблоны матриц (MAT/VCT)
   mi('logab', T('logab', 'logab(')), mi('Abs', T('abs', 'Abs ')), mi('d/dx', T('ddx', 'd/dx(')), mi('d²/dx²', T('d2dx', 'd²/dx²(')),
   mi('∫dx', T('int', '∫(')), mi('Σ(', T('sum', 'Σ('))
 ];
@@ -237,6 +238,7 @@ const runApp = {
         ed.clear();
         return;
       case 'SD': this.toggleSD(k.shift); return;
+      case '4': if (k.shift) { openCatalog(ed); return; } break;
       default:
     }
     if (!k.shift && !k.alpha && (k.id === 'UP' || k.id === 'DOWN')) {

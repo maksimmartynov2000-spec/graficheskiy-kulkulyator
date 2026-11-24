@@ -199,8 +199,9 @@ function brent(f, a, b, fa, fb) {
 }
 
 // «Красивое» значение рядом: 0.99999999997 → 1
-function snapNice(x) {
+function snapNice(x, scale) {
   if (x === 0 || !Number.isFinite(x)) return x;
+  if (Math.abs(x) < 1e-11 * (scale || 1)) return 0;
   const r = Number(x.toPrecision(6));
   return Math.abs(r - x) <= 2e-10 * Math.max(1, Math.abs(x)) ? r : x;
 }
@@ -212,7 +213,7 @@ function scanRoots(f, a, b, n) {
   for (let i = 0; i <= n; i++) { const x = a + (b - a) * i / n; xs.push(x); ys.push(f(x)); }
   const add = (x) => {
     if (!Number.isFinite(x)) return;
-    x = snapNice(x);
+    x = snapNice(x, b - a);
     const tol = 1e-9 * Math.max(1, Math.abs(x), (b - a) * 1e-3);
     if (!out.some((r) => Math.abs(r - x) <= tol)) out.push(x);
   };
@@ -236,7 +237,7 @@ function scanRoots(f, a, b, n) {
         const ga = g(xs[i - 1]), gb = g(xs[i + 1]);
         if (Number.isFinite(ga) && Number.isFinite(gb) && (ga < 0) !== (gb < 0)) {
           const x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
-          if (Number.isFinite(x) && Math.abs(f(snapNice(x))) <= 1e-10 * Math.max(scale, 1)) add(x);
+          if (Number.isFinite(x) && Math.abs(f(snapNice(x, b - a))) <= 1e-10 * Math.max(scale, 1)) add(x);
         }
       }
     }
@@ -259,7 +260,7 @@ function scanExtrema(f, a, b, kind, n) {
     let x;
     if (Number.isFinite(ga) && Number.isFinite(gb) && ga > 0 && gb < 0) x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
     if (x === undefined || !Number.isFinite(x)) x = goldenMax((t) => kind * f(t), xs[i - 1], xs[i + 1]);
-    x = snapNice(x);
+    x = snapNice(x, b - a);
     if (!out.some((t) => Math.abs(t - x) <= 1e-8 * Math.max(1, Math.abs(x)))) out.push(x);
   }
   return out.sort((p, q) => p - q);

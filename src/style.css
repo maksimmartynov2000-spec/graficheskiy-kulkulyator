@@ -168,7 +168,7 @@
 
   /* ---------- клавиши ---------- */
   .frow, .nav, .fn, .numpad { display: grid; flex: none; }
-  .frow { grid-template-columns: repeat(6, 1fr); height: calc(var(--rh) * .8); padding: 0 var(--bez); margin-top: calc(var(--gap) * .6); }
+  .frow { grid-template-columns: repeat(6, 1fr); height: calc(var(--rh) * .9); padding: 0 var(--bez); margin-top: calc(var(--gap) * .6); }
   .nav { grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(2, var(--rh)); }
   .fn { grid-template-columns: repeat(6, 1fr); grid-auto-rows: var(--rh2); }
   .numpad { grid-template-columns: repeat(5, 1fr); grid-auto-rows: var(--rh2); }
@@ -182,7 +182,8 @@
     padding: 0 1px calc(var(--kh) * .03);
     overflow: hidden;
   }
-  .frow, .nav { --kh: var(--rh); }
+  .nav { --kh: var(--rh); }
+  .frow { --kh: calc(var(--rh) * .9); }
   .fn, .numpad { --kh: var(--rh2); }
   .lg .ls { color: var(--legend-s); }
   .lg .la { color: var(--legend-a); margin-left: auto; }
@@ -208,7 +209,7 @@
   .key sup { font-size: .68em; line-height: 0; position: relative; top: -.1em; }
   .key.on, .dp.on { filter: brightness(.78); }
   .key.on { top: calc(var(--kh) * .035); box-shadow: 0 calc(var(--kh) * .01) 0 var(--key-edge); }
-  .key.f { border-radius: calc(var(--kh) * .1); font-size: calc(var(--kh) * .22); }
+  .key.f { border-radius: calc(var(--kh) * .1); font-size: calc(var(--kh) * .25); }
   .frow .kc { padding-bottom: calc(var(--gap) * .6); }
   .key.shift { background: linear-gradient(180deg, var(--shift-a), var(--shift-b)); color: var(--shift-text); box-shadow: 0 calc(var(--kh) * .045) 0 var(--shift-edge), 0 calc(var(--kh) * .07) calc(var(--kh) * .08) rgba(0, 0, 0, .28); }
   .key.alpha { background: linear-gradient(180deg, var(--alpha-a), var(--alpha-b)); box-shadow: 0 calc(var(--kh) * .045) 0 var(--alpha-edge), 0 calc(var(--kh) * .07) calc(var(--kh) * .08) rgba(0, 0, 0, .28); }
