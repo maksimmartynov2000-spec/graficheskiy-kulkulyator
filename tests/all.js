@@ -1,15 +1,14 @@
 // Все тесты подряд: node tests/all.js
 // (ядро → статистика → уравнения → клавиши и экраны в браузере → случайные нажатия)
 const { spawnSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
 
-const order = ['engine.js', 'stat.js', 'eqn.js', 'ui.js', 'monkey.js'];
-const files = order.filter((f) => fs.existsSync(path.join(__dirname, f)));
+// [файл, ...аргументы]: у статистики и уравнений вторая часть — сценарии «с клавиш» в браузере
+const order = [['engine.js'], ['stat.js', 'web'], ['eqn.js', 'ui'], ['ui.js'], ['monkey.js', '6000', '1']];
 let bad = 0;
-for (const f of files) {
-  const r = spawnSync(process.execPath, [path.join(__dirname, f)], { stdio: 'inherit' });
+for (const [f, ...args] of order) {
+  const r = spawnSync(process.execPath, [path.join(__dirname, f), ...args], { stdio: 'inherit' });
   if (r.status !== 0) bad++;
 }
-console.log(bad ? `\nИТОГ: не прошли ${bad} из ${files.length} наборов` : `\nИТОГ: всё прошло (${files.length} наборов)`);
+console.log(bad ? `\nИТОГ: не прошли ${bad} из ${order.length} наборов` : `\nИТОГ: всё прошло (${order.length} наборов)`);
 process.exit(bad ? 1 : 0);

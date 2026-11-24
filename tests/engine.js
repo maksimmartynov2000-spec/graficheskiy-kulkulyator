@@ -227,6 +227,8 @@ C('Σ(X²,X,1,10)', '385');
 C('Σ(1÷K,K,1,4)', '[25/12]');
 C('Solve(X²−2,1)', '1.414213562');
 C('Solve(2X+1=7,0)', '3');
+C('Solve(X²+1,3)', 'Not Found');
+C('Solve(X²+1,0,~100000,100000)', 'Not Found');
 S.angle = 'Rad';
 C('∫(sin X,0,π)', '2');
 C('d/dx(sin X,0)', '1');
@@ -272,6 +274,8 @@ F(-0.0000001, '0.00', { disp: 'Fix', dispN: 2 });
   t.eq(mn.join(), '1', 'минимум X³−3X');
   const mn2 = core.scanExtrema(compileTokens(tok('X²−X÷3')), -6.3, 6.3, -1);
   t.near(mn2[0], 1 / 6, 'минимум X²−X/3', 1e-10);
+  t.eq(core.scanRoots(compileTokens(tok('X²+1')), -1e5, 1e5).length, 0, 'X²+1 на широком отрезке: корней нет');
+  t.eq(core.scanRoots(compileTokens(tok('(X−1)²')), -1e3, 1e3, 8000).join(), '1', 'касание находится и на широком отрезке');
   // полюс не должен считаться экстремумом
   const rf = compileTokens(tok('(X−1)(X+2)÷(X−3)'));
   t.eq(core.scanExtrema(rf, -6.3, 6.3, 1).map((x) => x.toFixed(6)).join(), '-0.162278', 'максимум дробно-рациональной функции');

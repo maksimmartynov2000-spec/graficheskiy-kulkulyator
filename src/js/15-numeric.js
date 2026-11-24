@@ -237,7 +237,8 @@ function scanRoots(f, a, b, n) {
         const ga = g(xs[i - 1]), gb = g(xs[i + 1]);
         if (Number.isFinite(ga) && Number.isFinite(gb) && (ga < 0) !== (gb < 0)) {
           const x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
-          if (Number.isFinite(x) && Math.abs(f(snapNice(x, b - a))) <= 1e-10 * Math.max(scale, 1)) add(x);
+          // значение в точке касания должно быть ничтожным рядом с соседними точками, а не со всем отрезком
+          if (Number.isFinite(x) && Math.abs(f(snapNice(x, b - a))) <= 1e-7 * Math.max(p, r)) add(x);
         }
       }
     }
@@ -285,6 +286,7 @@ function nSolve(f, x0, lo, hi) {
   const inside = (x) => !bounded || (x >= lo && x <= hi);
   let x = x0, fx = f(x);
   if (fx === 0) return x;
+  const f0 = Number.isFinite(fx) ? Math.abs(fx) : 1;   // масштаб функции — по значению в начальной точке
   if (Number.isFinite(fx)) {
     for (let it = 0; it < 60; it++) {
       const d = nDeriv(f, x);
@@ -294,7 +296,7 @@ function nSolve(f, x0, lo, hi) {
       const fn = f(nx);
       if (!Number.isFinite(fn)) break;
       if (Math.abs(nx - x) <= 1e-14 * Math.max(1, Math.abs(nx)) || fn === 0) {
-        if (Math.abs(fn) <= 1e-9 * Math.max(1, Math.abs(fx))) return snapNice(nx);
+        if (Math.abs(fn) <= 1e-9 * Math.max(1, f0)) return snapNice(nx);
         break;
       }
       x = nx; fx = fn;
