@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="app-build" content="dev">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#d9dde3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Graph Calc">
+<meta name="application-name" content="Graph Calc">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Графический калькулятор</title>
+<!--
+  Графический калькулятор для учеников: учебная модель школьного графического калькулятора.
+  Этот файл собран из исходников в src/ командой python3 tools/build.py — руками его не править.
+  Метка сборки (app-build) должна оставаться в самом начале файла: её ставит tools/stamp.py,
+  а приложение сравнивает её со свежим index.html на сайте и обновляется само.
+-->
+<style>
+/*@CSS@*/
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="calc" id="calc">
+    <div class="left">
+      <div class="head">
+        <span class="brand">GRAPHING CALCULATOR</span>
+        <button type="button" class="more" id="more" aria-label="App settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+      </div>
+      <div class="screen"><canvas id="lcd" width="384" height="216" aria-label="Calculator display"></canvas></div>
+      <div class="frow" id="k-f"></div>
+      <div class="nav" id="k-nav"></div>
+    </div>
+    <div class="right">
+      <div class="fn" id="k-fn"></div>
+      <div class="numpad" id="k-num"></div>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <h2 id="sheet-title">Graphing Calculator</h2>
+    <div class="sheet-row">
+      <span>Theme</span>
+      <div class="seg" role="group" aria-label="Theme">
+        <button type="button" data-theme-set="auto">Auto</button>
+        <button type="button" data-theme-set="light">Light</button>
+        <button type="button" data-theme-set="dark">Dark</button>
+      </div>
+    </div>
+    <div class="sheet-row" id="vib-row">
+      <span>Key vibration</span>
+      <div class="seg" role="group" aria-label="Key vibration">
+        <button type="button" data-vib-set="on">On</button>
+        <button type="button" data-vib-set="off">Off</button>
+      </div>
+    </div>
+    <div class="sheet-row">
+      <span>Version <b id="ver"></b></span>
+      <button type="button" class="btn ghost" id="checkupd">Check for update</button>
+    </div>
+    <p class="sheet-note" id="offline-note"></p>
+    <button type="button" class="btn wide" id="sheet-close">Done</button>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+/*@JS@*/
+})();
+</script>
+</body>
+</html>
