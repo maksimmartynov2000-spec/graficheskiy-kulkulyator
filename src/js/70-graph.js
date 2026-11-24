@@ -261,11 +261,7 @@ const graphApp = {
       if (px < 0 || px > LW) { const hw = (VW.xmax - VW.xmin) / 2; VW.xmin = r15(p.x - hw); VW.xmax = r15(p.x + hw); plotVer++; }
       setVar('X', R(p.x));
     }
-    if (Number.isFinite(p.y)) {
-      const py = Y2P(p.y);
-      if (py < GA.top || py > GA.bottom) { const hh = (VW.ymax - VW.ymin) / 2; VW.ymin = r15(p.y - hh); VW.ymax = r15(p.y + hh); plotVer++; }
-      setVar('Y', R(p.y));
-    }
+    if (Number.isFinite(p.y)) setVar('Y', R(p.y));   // по вертикали окно не двигаем: точка может уйти за край, координаты видны
   },
   moveTr(d) {
     const s = this.g, tr = s.tr;
@@ -426,7 +422,7 @@ const graphApp = {
   },
   follow2(x, y) {                      // показать точку, даже если она за экраном
     if (X2P(x) < 0 || X2P(x) > LW) { const hw = (VW.xmax - VW.xmin) / 2; VW.xmin = r15(x - hw); VW.xmax = r15(x + hw); plotVer++; }
-    if (Y2P(y) < GA.top || Y2P(y) > GA.bottom) { const hh = (VW.ymax - VW.ymin) / 2; VW.ymin = r15(y - hh); VW.ymax = r15(y + hh); plotVer++; }
+    void y;
   },
   integral(a, b) {
     const s = this.g, i = s.fns[s.tr.k], fq = fnGet(i).f;

@@ -217,7 +217,9 @@ const runApp = {
   key(k) {
     const ed = this.ed;
     const f = fIndex(k);
+    if (k.shift && k.id === 'F3') { openVWindow(() => { plotVer++; }); return; }
     if (f >= 0) {
+      if (k.shift) return;
       const it = this.menu.press(f);
       if (it && it.fn) it.fn();
       else if (it && it.ins !== undefined) {

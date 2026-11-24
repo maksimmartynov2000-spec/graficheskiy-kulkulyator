@@ -1,9 +1,10 @@
-// Все тесты подряд: node tests/all.js   (ядро → статистика → уравнения → клавиши и экраны в браузере)
+// Все тесты подряд: node tests/all.js
+// (ядро → статистика → уравнения → клавиши и экраны в браузере → случайные нажатия)
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const order = ['engine.js', 'stat.js', 'eqn.js', 'ui.js'];
+const order = ['engine.js', 'stat.js', 'eqn.js', 'ui.js', 'monkey.js'];
 const files = order.filter((f) => fs.existsSync(path.join(__dirname, f)));
 let bad = 0;
 for (const f of files) {

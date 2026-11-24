@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="app-build" content="2026-11-25·31199e7e">
+<meta name="app-build" content="2026-11-25·ca1dfb8e">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#d9dde3" media="(prefers-color-scheme: light)">
@@ -1037,6 +1037,10 @@ function scanExtrema(f, a, b, kind, n) {
     if (Number.isFinite(ga) && Number.isFinite(gb) && ga > 0 && gb < 0) x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
     if (x === undefined || !Number.isFinite(x)) x = goldenMax((t) => kind * f(t), xs[i - 1], xs[i + 1]);
     x = snapNice(x, b - a);
+    // у разрыва (полюса) соседние значения больше найденного — это не экстремум
+    const fx = kind * f(x), dx = (xs[i + 1] - xs[i - 1]) * 1e-3, tol = 1e-9 * Math.max(1, Math.abs(fx));
+    const fl = kind * f(x - dx), fr = kind * f(x + dx);
+    if (!Number.isFinite(fx) || !Number.isFinite(fl) || !Number.isFinite(fr) || fl > fx + tol || fr > fx + tol) continue;
     if (!out.some((t) => Math.abs(t - x) <= 1e-8 * Math.max(1, Math.abs(x)))) out.push(x);
   }
   return out.sort((p, q) => p - q);
@@ -3535,7 +3539,9 @@ const runApp = {
   key(k) {
     const ed = this.ed;
     const f = fIndex(k);
+    if (k.shift && k.id === 'F3') { openVWindow(() => { plotVer++; }); return; }
     if (f >= 0) {
+      if (k.shift) return;
       const it = this.menu.press(f);
       if (it && it.fn) it.fn();
       else if (it && it.ins !== undefined) {
@@ -4470,11 +4476,7 @@ const graphApp = {
       if (px < 0 || px > LW) { const hw = (VW.xmax - VW.xmin) / 2; VW.xmin = r15(p.x - hw); VW.xmax = r15(p.x + hw); plotVer++; }
       setVar('X', R(p.x));
     }
-    if (Number.isFinite(p.y)) {
-      const py = Y2P(p.y);
-      if (py < GA.top || py > GA.bottom) { const hh = (VW.ymax - VW.ymin) / 2; VW.ymin = r15(p.y - hh); VW.ymax = r15(p.y + hh); plotVer++; }
-      setVar('Y', R(p.y));
-    }
+    if (Number.isFinite(p.y)) setVar('Y', R(p.y));   // по вертикали окно не двигаем: точка может уйти за край, координаты видны
   },
   moveTr(d) {
     const s = this.g, tr = s.tr;
@@ -4635,7 +4637,7 @@ const graphApp = {
   },
   follow2(x, y) {                      // показать точку, даже если она за экраном
     if (X2P(x) < 0 || X2P(x) > LW) { const hw = (VW.xmax - VW.xmin) / 2; VW.xmin = r15(x - hw); VW.xmax = r15(x + hw); plotVer++; }
-    if (Y2P(y) < GA.top || Y2P(y) > GA.bottom) { const hh = (VW.ymax - VW.ymin) / 2; VW.ymin = r15(y - hh); VW.ymax = r15(y + hh); plotVer++; }
+    void y;
   },
   integral(a, b) {
     const s = this.g, i = s.fns[s.tr.k], fq = fnGet(i).f;

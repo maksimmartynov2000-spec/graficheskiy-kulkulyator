@@ -261,6 +261,10 @@ function scanExtrema(f, a, b, kind, n) {
     if (Number.isFinite(ga) && Number.isFinite(gb) && ga > 0 && gb < 0) x = brent(g, xs[i - 1], xs[i + 1], ga, gb);
     if (x === undefined || !Number.isFinite(x)) x = goldenMax((t) => kind * f(t), xs[i - 1], xs[i + 1]);
     x = snapNice(x, b - a);
+    // у разрыва (полюса) соседние значения больше найденного — это не экстремум
+    const fx = kind * f(x), dx = (xs[i + 1] - xs[i - 1]) * 1e-3, tol = 1e-9 * Math.max(1, Math.abs(fx));
+    const fl = kind * f(x - dx), fr = kind * f(x + dx);
+    if (!Number.isFinite(fx) || !Number.isFinite(fl) || !Number.isFinite(fr) || fl > fx + tol || fr > fx + tol) continue;
     if (!out.some((t) => Math.abs(t - x) <= 1e-8 * Math.max(1, Math.abs(x)))) out.push(x);
   }
   return out.sort((p, q) => p - q);

@@ -272,7 +272,14 @@ F(-0.0000001, '0.00', { disp: 'Fix', dispN: 2 });
   t.eq(mn.join(), '1', 'минимум X³−3X');
   const mn2 = core.scanExtrema(compileTokens(tok('X²−X÷3')), -6.3, 6.3, -1);
   t.near(mn2[0], 1 / 6, 'минимум X²−X/3', 1e-10);
+  // полюс не должен считаться экстремумом
+  const rf = compileTokens(tok('(X−1)(X+2)÷(X−3)'));
+  t.eq(core.scanExtrema(rf, -6.3, 6.3, 1).map((x) => x.toFixed(6)).join(), '-0.162278', 'максимум дробно-рациональной функции');
+  t.eq(core.scanExtrema(compileTokens(tok('1÷X')), -6.3, 6.3, 1).length, 0, 'у 1/X нет максимумов');
+  t.eq(core.scanExtrema(compileTokens(tok('Abs X−1')), -6.3, 6.3, -1).join(), '0', 'минимум |X|−1 в изломе');
   S.angle = 'Deg';
+  t.eq(core.scanRoots(compileTokens(tok('sin X')), -540, 540).join(), '-540,-360,-180,0,180,360,540', 'корни sin X в градусах');
+  t.eq(core.scanExtrema(compileTokens(tok('3sin (X+30)−1')), 0, 360, 1).join(), '60', 'максимум 3sin(X+30)−1');
   t.near(core.normCdf(1.96), 0.9750021048517795, 'Φ(1.96)', 1e-13);
   t.near(core.normInv(0.975), 1.959963984540054, 'Φ⁻¹(0.975)', 1e-12);
 }
