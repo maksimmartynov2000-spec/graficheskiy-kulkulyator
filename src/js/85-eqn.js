@@ -193,12 +193,20 @@ function eqnRatNear(x, maxDen) {
 }
 
 // ---------- корни многочленов ----------
-// Квадратное уравнение ax² + bx + c = 0: [] либо два корня — сначала (−b+√D)/2a, потом (−b−√D)/2a
-function eqnQuad(a, b, c) {
+// Комплексные корни при D < 0: −b/2a ± i·√(−D)/2a — сначала корень с положительной мнимой частью
+function eqnQuadCx(a, b, D) {
+  const twoA = sMul(RI(2), a), re = sDiv(sNeg(b), twoA);
+  let im = sDiv(sSqrt(sNeg(D)), twoA);
+  if (im.v < 0) im = sNeg(im);
+  return [CX(re, im), CX(re, sNeg(im))];
+}
+// Квадратное уравнение ax² + bx + c = 0: [] либо два корня — сначала (−b+√D)/2a, потом (−b−√D)/2a.
+// cplx — показывать и комплексные корни (Complex Mode не Real)
+function eqnQuad(a, b, c, cplx) {
   const D = sSub(sMul(b, b), sMul(RI(4), sMul(a, c)));
   // у приближённых коэффициентов «почти нулевой» дискриминант считаем нулём
   const tiny = !D.ex && Math.abs(D.v) <= 1e-12 * (b.v * b.v + Math.abs(4 * a.v * c.v));
-  if (D.v < 0 && !tiny) return [];
+  if (D.v < 0 && !tiny) return cplx ? eqnQuadCx(a, b, D) : [];
   const twoA = sMul(RI(2), a);
   if (D.v === 0 || tiny) { const x = sDiv(sNeg(b), twoA); return [x, x]; }
   const sq = sSqrt(D);
@@ -211,8 +219,13 @@ function eqnQuad(a, b, c) {
   const fix = (x, v) => (x.ex && exIsRat(x.ex) ? x : R(v, x.ex, x.dec));
   return [fix(sDiv(sAdd(sNeg(b), sq), twoA), vp), fix(sDiv(sSub(sNeg(b), sq), twoA), vm)];
 }
-// Вещественные корни многочлена без кратных корней (целые коэффициенты): рациональные — точно
-function eqnSqfRoots(F) {
+// Комплексный корень, найденный численно: «шум» в частях убирается
+function eqnCx(re, im) {
+  const sc = Math.hypot(re, im);
+  return CX(RF(snapNice(re, sc), false, false), RF(snapNice(im, sc), false, false));
+}
+// Корни многочлена без кратных корней (целые коэффициенты): рациональные — точно; комплексные — только при cplx
+function eqnSqfRoots(F, cplx) {
   const roots = [];
   let p = F;
   if (p[p.length - 1] === 0n) { roots.push(RI(0)); p = p.slice(0, -1); }
@@ -234,36 +247,38 @@ function eqnSqfRoots(F) {
   }
   const n = p.length - 1;
   if (n === 1) roots.push(eqnBigRat(-p[1], p[0]));
-  else if (n === 2) roots.push(...eqnQuad(eqnBigNum(p[0]), eqnBigNum(p[1]), eqnBigNum(p[2])));
+  else if (n === 2) roots.push(...eqnQuad(eqnBigNum(p[0]), eqnBigNum(p[1]), eqnBigNum(p[2]), cplx));
   else if (n >= 3) {
     const c = zpFloat(p);
     for (const [re, im] of zs || eqnAberth(c)) {
       if (Math.abs(im) <= 1e-9 * Math.max(1, Math.abs(re))) roots.push(RF(snapNice(eqnPolish(c, re)), false, false));
+      else if (cplx) roots.push(eqnCx(re, im));
     }
   }
   return roots;
 }
 // Приближённые коэффициенты: все корни численно, вещественные — с малой мнимой частью
-function eqnFloatRoots(c) {
-  const out = [];
+function eqnFloatRoots(c, cplx) {
+  const out = [], cxs = [];
   c = c.slice();
   while (c.length > 1 && c[c.length - 1] === 0) { out.push(0); c.pop(); }
   if (c.length === 2) out.push(-c[1] / c[0]);
   else if (c.length > 2) {
     for (const [re, im] of eqnAberth(c)) {
       if (Math.abs(im) <= 1e-6 * Math.max(1, Math.abs(re))) out.push(snapNice(eqnPolish(c, re)));
+      else if (cplx) cxs.push(eqnCx(re, im));
     }
   }
-  return out.map((v) => RF(v, false, false));
+  return [...out.map((v) => RF(v, false, false)), ...cxs];
 }
-// Вещественные корни многочлена. coefs — числа, старший коэффициент первый.
+// Корни многочлена: вещественные, а при cplx — и комплексные. coefs — числа, старший коэффициент первый.
 // Кратный корень повторяется столько раз, какова его кратность
-function eqnPoly(coefs) {
+function eqnPoly(coefs, cplx) {
   if (coefs[0].v === 0) fail('Ma ERROR');
   const deg = coefs.length - 1, dec = coefs.some((x) => x.dec);
   let roots = null;
   if (deg === 1) roots = [sDiv(sNeg(coefs[1]), coefs[0])];
-  else if (deg === 2) roots = eqnQuad(coefs[0], coefs[1], coefs[2]);
+  else if (deg === 2) roots = eqnQuad(coefs[0], coefs[1], coefs[2], cplx);
   else {
     const big = zpFrom(coefs);
     if (big) {
@@ -271,17 +286,19 @@ function eqnPoly(coefs) {
         roots = [];
         zpSqFree(big).forEach((F, k) => {
           if (F.length < 2) return;
-          for (const r of eqnSqfRoots(F)) for (let i = 0; i <= k; i++) roots.push(r);
+          for (const r of eqnSqfRoots(F, cplx)) for (let i = 0; i <= k; i++) roots.push(r);
         });
       } catch (e) {
         if (e instanceof CalcError) throw e;
         roots = null;                  // точный путь не удался — считаем численно
       }
     }
-    if (!roots) roots = eqnFloatRoots(coefs.map((x) => x.v));
-    roots.sort((p, q) => q.v - p.v);
+    if (!roots) roots = eqnFloatRoots(coefs.map((x) => x.v), cplx);
+    // по убыванию вещественной части; в сопряжённой паре сначала корень с положительной мнимой частью
+    roots.sort((p, q) => q.v - p.v || (q.im ? q.im.v : 0) - (p.im ? p.im.v : 0));
   }
-  return roots.map((x) => R(x.v, x.ex, dec || x.dec));
+  const mark = (x) => R(x.v, x.ex, dec || x.dec);
+  return roots.map((x) => (isCx(x) ? CX(mark(x.re), mark(x.im)) : mark(x)));
 }
 
 // ---------- Solver ----------
@@ -368,7 +385,7 @@ const eqnApp = {
   menu: null,
 
   enter() { this.go('home'); },
-  setup() { return ['io', 'frac', 'angle', 'disp']; },
+  setup() { return ['io', 'frac', 'angle', 'cplx', 'disp']; },
   onSetup() { if (this.st === 'solEq' && this.ed.math !== (S.io === 'Math')) this.editEq(true); },
 
   go(st) {
@@ -448,7 +465,7 @@ const eqnApp = {
   solve() {
     const g = this.grid();
     if (g.poly) {
-      const roots = eqnPoly(g.data[0]);
+      const roots = eqnPoly(g.data[0], S.cplx !== 'Real');
       if (!roots.length) { infoBox(['No Real Roots', '', 'Press:[EXIT]']); return; }
       this.res = { labels: roots.map((_, i) => 'X' + (i + 1)), vals: roots, sel: 0, off: 0, mode: 'auto' };
       this.go('polR');
@@ -491,9 +508,9 @@ const eqnApp = {
     else if (k.id === 'SD' && !k.shift) {
       // S⇔D: все значения разом — точная запись ↔ десятичная
       const math = S.io === 'Math';
-      const exact = (x) => r.mode !== 'dec' && (r.mode === 'exact' || !x.dec) && !!exactForm(x, math);
+      const exact = (x) => r.mode !== 'dec' && (r.mode === 'exact' || !x.dec) && valExact(x, math);
       if (r.vals.some(exact)) r.mode = 'dec';
-      else if (r.vals.some((x) => !!exactForm(x, math))) r.mode = 'exact';
+      else if (r.vals.some((x) => valExact(x, math))) r.mode = 'exact';
       r.off = 0;
     }
   },
@@ -641,7 +658,7 @@ const eqnApp = {
     eqnHeader(this.headParts(this.grid()), 24);
     let y = 0;
     const rows = r.vals.map((x) => {
-      const row = numRow(x, r.mode, math), lay = layRow(row, 0, math, false);
+      const row = valRow(x, r.mode, math), lay = layRow(row, 0, math, false);
       const a = Math.max(12, lay.a), q = { row, lay, a, h: Math.ceil(a + Math.max(12, lay.d)), y };
       y += q.h;
       return q;

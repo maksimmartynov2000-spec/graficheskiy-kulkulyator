@@ -81,6 +81,43 @@ const { open } = require('./web');
   await has('Line', 'метка Line');
   await K('SHIFT MENU F1 EXIT');
 
+  // ---------- комплексные числа ----------
+  const lastCx = () => ev(() => { const h = window.__calc.UI.apps.run.hist; const z = h[h.length - 1].val; return z && z.cx ? z.re.v + ',' + z.im.v : 'real'; });
+  await K('AC LPAR 1 ADD 2 SHIFT 0 RPAR LPAR 3 SUB SHIFT 0 RPAR EXE');
+  eq(await lastCx(), '5,5', '(1+2i)(3−i) = 5+5i (клавиша SHIFT 0)');
+  await K('SHIFT 0 SQR EXE');
+  near(await ans(), -1, 'i² = −1');
+  await K('SHIFT SQR NEG 4 EXE');
+  await has('Non-Real ERROR', 'Complex Mode Real: корень из отрицательного числа — ошибка');
+  await K('EXIT AC');
+  await K('SHIFT MENU DOWN DOWN DOWN DOWN DOWN DOWN DOWN F2 EXIT');
+  await has('a+bi', 'Setup → Complex Mode → a+bi: метка в строке состояния');
+  await K('SHIFT SQR NEG 4 EXE');
+  eq(await lastCx(), '0,2', '√(−4) = 2i в режиме a+bi');
+  await K('LPAR 1 ADD SHIFT 0 RPAR DIV 3 EXE SD');
+  eq((await last()).mode, 'dec', 'S⇔D для комплексного ответа с дробями');
+  await K('SD');
+  eq((await last()).mode, 'exact', 'S⇔D возвращает дроби');
+  await K('OPTN F3');
+  await has('Conjg', 'OPTN → COMPLEX: меню');
+  await K('F3 LPAR 1 ADD SHIFT 0 RPAR EXE');
+  near(await ans(), 45, 'Arg(1+i) = 45° через OPTN → COMPLEX → Arg');
+  await K('1 ADD SHIFT 0 F6 F3 EXE');
+  eq((await last()).form, 'polar', 'команда ▶r∠θ: ответ в полярном виде');
+  await K('EXIT EXIT');
+  await K('2 SHIFT XTT 9 0 EXE');
+  eq(await lastCx(), '0,2', 'полярный ввод 2∠90 = 2i (клавиша SHIFT X,θ,T)');
+  await K('2 ADD 3 SHIFT 0 STO ALPHA LOG EXE');
+  await c.page.waitForTimeout(700);
+  await c.page.reload();
+  await c.page.waitForFunction(() => window.__calc && document.querySelector('.calc.ready'));
+  eq(await ev(() => { const z = window.__calc.mem.vars.B; return z && z.cx ? z.re.v + ',' + z.im.v : 'нет'; }), '2,3', 'комплексная переменная B пережила перезагрузку');
+  eq(await ev(() => { const z = window.__calc.mem.ans; return z && z.cx ? z.re.v + ',' + z.im.v : 'нет'; }), '2,3', 'комплексный Ans пережил перезагрузку');
+  eq(await lastCx(), '2,3', 'комплексный ответ в истории пережил перезагрузку');
+  await has('a+bi', 'Complex Mode сохранился');
+  await K('ALPHA LOG MUL ALPHA LOG EXE');
+  eq(await lastCx(), '-5,12', 'B×B = −5+12i после перезагрузки');
+
   // ---------- Graph ----------
   await fresh();
   await K('MENU 5 XTT SQR SUB 2 EXE XTT EXE');

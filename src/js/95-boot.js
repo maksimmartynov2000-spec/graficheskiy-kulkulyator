@@ -25,10 +25,12 @@ function saveState() {
 function loadState() {
   const st = store.get('state', null);
   if (!st || st.v !== 1) return null;
-  const okNum = (x) => x && typeof x.v === 'number' && Number.isFinite(x.v);
+  const okNum = (x) => x && typeof x.v === 'number' && Number.isFinite(x.v) && !x.cx;
+  // переменные и Ans могут быть комплексными: {cx, re, im} с двумя обычными числами
+  const okVal = (x) => okNum(x) || (!!x && x.cx === true && okNum(x.re) && okNum(x.im));
   for (const k in S) if (st.S && typeof st.S[k] === typeof S[k]) S[k] = st.S[k];
-  for (const n of VARS) if (st.vars && okNum(st.vars[n])) setVar(n, st.vars[n]);
-  if (okNum(st.ans)) mem.ans = st.ans;
+  for (const n of VARS) if (st.vars && okVal(st.vars[n])) setVar(n, st.vars[n]);
+  if (okVal(st.ans)) mem.ans = st.ans;
   if (Array.isArray(st.lists)) mem.lists = st.lists.map((l) => (Array.isArray(l) ? l.filter(okNum) : []));
   if (Array.isArray(st.listSub)) mem.listSub = st.listSub.map((s) => (typeof s === 'string' ? s : ''));
   if (st.mats && typeof st.mats === 'object') {

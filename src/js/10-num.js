@@ -128,7 +128,8 @@ const R = (v, ex, dec) => ({ v, ex: ex || null, dec: !!dec });
 const RI = (n) => R(n, exInt(n), false);
 const RX = (ex, dec) => R(exVal(ex), ex, dec);
 const r15 = (x) => (x === 0 || !Number.isFinite(x) ? x : Number(x.toPrecision(15)));
-const isNum = (a) => !!a && typeof a === 'object' && typeof a.v === 'number';
+const isCx = (a) => !!a && a.cx === true;                 // комплексное число (см. 12-complex.js)
+const isNum = (a) => !!a && typeof a === 'object' && typeof a.v === 'number' && !a.cx;
 
 // Результат «не точной» функции: целые значения от точных аргументов остаются точными (log 100 = 2)
 function RF(v, exactIn, dec) {

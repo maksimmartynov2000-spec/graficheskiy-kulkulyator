@@ -1,19 +1,22 @@
 // Тесты ядра вычислений: node tests/engine.js
 const { load, makeTok, makeRowStr, runner } = require('./lib');
-const core = load(['00-util.js', '10-num.js', '15-numeric.js', '20-parse.js'],
+const core = load(['00-util.js', '10-num.js', '12-complex.js', '15-numeric.js', '20-parse.js'],
   ['G', 'S', 'mem', 'PRE', 'FNA', 'evalTokens', 'compileTokens', 'numRow', 'fmtNum', 'isNum', 'isL', 'isM', 'CalcError', 'setVar', 'RI',
-    'scanRoots', 'scanExtrema', 'nInt', 'nDeriv', 'ratApprox', 'exactRow', 'normCdf', 'normInv']);
+    'scanRoots', 'scanExtrema', 'nInt', 'nDeriv', 'ratApprox', 'exactRow', 'normCdf', 'normInv',
+    'isCx', 'valRow', 'cxTakeHint', 'CX_POLAR', 'CX_RECT', 'cxText']);
 const { S, mem, evalTokens, compileTokens, numRow, isNum, isL, isM, CalcError } = core;
 const tok = makeTok(core), rs = makeRowStr(core);
 const t = runner();
 
-// calc('1÷3') → строка ответа в режиме Math
+// calc('1÷3') → строка ответа в режиме Math. s — запись «как на бумаге» или готовый массив знаков
 function calc(s, mode) {
   try {
-    const v = evalTokens(tok(s));
-    if (isNum(v)) { mem.ans = v; return rs(numRow(v, mode || 'auto', S.io === 'Math')); }
-    if (isL(v)) return '{' + v.a.map((x) => rs(numRow(x, mode || 'auto', S.io === 'Math'))).join(',') + '}';
-    if (isM(v)) return '[' + v.m.map((r) => '[' + r.map((x) => rs(numRow(x, mode || 'auto', S.io === 'Math'))).join(',') + ']').join('') + ']';
+    const one = (x, form) => rs(core.valRow(x, mode || 'auto', S.io === 'Math', form));
+    core.cxTakeHint();
+    const v = evalTokens(typeof s === 'string' ? tok(s) : s);
+    if (isNum(v) || core.isCx(v)) { mem.ans = v; return one(v, core.cxTakeHint()); }
+    if (isL(v)) return '{' + v.a.map((x) => one(x)).join(',') + '}';
+    if (isM(v)) return '[' + v.m.map((r) => '[' + r.map((x) => one(x)).join(',') + ']').join('') + ']';
     return v.done ? 'Done' : '?';
   } catch (e) {
     if (e instanceof CalcError) return e.type;
@@ -291,5 +294,150 @@ C('NormCD(~1,1)', '0.6826894921');
 C('BinomialPD(2,5,0.5)', '0.3125');
 C('BinomialCD(2,5,0.5)', '0.5');
 C('InvNormCD(0.975)', '1.959963985');
+
+// --- комплексные числа ---
+{
+  const SQ = '²';
+  S.angle = 'Rad'; S.cplx = 'Real'; S.io = 'Math';
+  // явная арифметика с i работает и в режиме Real
+  C('i' + SQ, '−1');
+  C('i', 'i');
+  C('2i', '2i');
+  C('−i', '−i');
+  C('3i' + SQ, '−3');
+  C('(1+2i)(3−i)', '5+5i');
+  C('(1+2i)+(3−2i)', '4');
+  C('(1+2i)÷(3−4i)', '−[1/5]+[2/5]i');
+  C('1÷2i', '−[1/2]i');
+  C('(1+2i)÷3', '[1/3]+[2/3]i');
+  C('(1+2i)÷3', '0.3333333333+0.6666666667i', 'dec');
+  C('1.5+2i', '1.5+2i');
+  C('(1+i)^2', '2i');
+  C('(1+i)^10', '32i');
+  C('i^~1', '−i');
+  C('(1+i)⁻¹', '[1/2]−[1/2]i');
+  C('1÷(0i)', 'Ma ERROR');
+  C('Abs (3+4i)', '5');
+  C('Abs (1+i)', '√(2)');
+  C('Arg (1+i)', '[1/4]π');
+  C('Arg i', '[1/2]π');
+  C('Arg ~1', 'π');
+  C('Arg 5', '0');
+  C('Arg (3+4i)', '0.927295218');
+  C('Conjg (1+2i)', '1−2i');
+  C('Conjg 5', '5');
+  C('ReP (3+4i)', '3');
+  C('ImP (3+4i)', '4');
+  C('ImP 5', '0');
+  C('√(3+4i)', '2+i');
+  C('√(2i)', '1+i');
+  C('√i', '[√(2)/2]+[√(2)/2]i');
+  C('√(~3−4i)', '1−2i');
+  C('e^(πi)', '−1');
+  C('e^(πi÷3)', '[1/2]+[√(3)/2]i');
+  C('e^(1+i)', '1.468693940+2.287355287i'.replace('1.468693940', '1.46869394'));
+  C('ln i', '[1/2]πi');
+  C('(1+i)(1−i)', '2');
+  C('2^i', '0.7692389014+0.6389612763i');
+  C('i^i', '0.2078795764');
+  C('i^0.5', '[√(2)/2]+[√(2)/2]i');
+  C('Σ(i^K,K,1,4)', '0');
+  C('Σ(Ki,K,1,3)', '6i');
+  C('Seq(i^K,K,1,3,1)', '{i,−1,−i}');
+  C('Int (2.7+3.2i)', '2+3i');
+  C('10^i', '−0.6682015102+0.743980337i');
+  C('log i', '0.6821881769i');
+  C('(1+(√2)i)' + SQ, '−1+2√(2)i');
+  C('(1+√2i)' + SQ, '3+4i');           // √2i = √(2i): сокращённое умножение старше знака корня
+  // режим Real: вещественный расчёт с комплексным ответом — ошибка, как раньше
+  C('√~4', 'Non-Real ERROR');
+  C('ln ~1', 'Non-Real ERROR');
+  C('(~4)^0.5', 'Ma ERROR');
+  C('(~8)^(1÷3)', '−2');
+  // чего с комплексными нельзя
+  C('sin i', 'Non-Real ERROR');
+  C('i>1', 'Non-Real ERROR');
+  C('i!', 'Non-Real ERROR');
+  C('5nCri', 'Non-Real ERROR');
+  C('Solve(X+i,0)', 'Syntax ERROR');
+  C('GCD(4,2i)', 'Non-Real ERROR');
+  // переменные и Ans
+  C('1+2i→A', '1+2i');
+  C('A×A', '−3+4i');
+  C('Ans+1', '−2+4i');
+  C('2A', '2+4i');
+  C('0→A', '0');
+  // списки и матрицы
+  C('{1,i}+{i,1}', '{1+i,1+i}');
+  C('{1,i}×2', '{2,2i}');
+  C('{1,i}×i', '{i,−1}');
+  C('Abs {3+4i,~2}', '{5,2}');
+  C('Dim {1,i}', '2');
+  C('Sum {1,i}', 'Complex Number In List');
+  C('{i,2}→List 3', 'Complex Number In List');
+  C('Max({1,i})', 'Complex Number In List');
+  C('[[1,i][0,1]]×[[1,0][i,1]]', '[[0,i][i,1]]');
+  C('2i×[[1,2][3,4]]', '[[2i,4i][6i,8i]]');
+  C('[[1,i][0,1]]+[[1,1][1,1]]', '[[2,1+i][1,2]]');
+  C('Det [[1,i][0,1]]', 'Complex Number In Matrix');
+  C('[[1,i][0,1]]→Mat B', 'Complex Number In Matrix');
+  // полярная запись
+  S.angle = 'Deg';
+  C('2∠60', '1+√(3)i');
+  C('1∠90', 'i');
+  C('2∠~45', '√(2)−√(2)i');
+  C('3∠0', '3');
+  C('2∠30×(1∠60)', '2i');
+  C('Arg (1+i)', '45');
+  C('Arg (~1−i)', '−135');
+  C('i∠30', 'Non-Real ERROR');
+  S.angle = 'Rad';
+  C('1∠(π÷2)', 'i');
+  // режим a+bi
+  S.cplx = 'a+bi';
+  C('√~4', '2i');
+  C('√~2', '√(2)i');
+  C('√(~1÷4)', '[1/2]i');
+  C('ln ~1', 'πi');
+  C('log ~100', '2+1.364376354i');
+  C('(~4)^(1÷2)', '2i');
+  C('(~1)^0.5', 'i');
+  C('(~8)^(1÷3)', '1+1.732050808i');
+  C('³√~8', '−2');
+  C('3ˣ√~8', '−2');
+  C('2ˣ√~9', '3i');
+  C('√4', '2');
+  C('2+3', '5');
+  C('(√~4)' + SQ, '−4');
+  C('2^0.5', '1.414213562');
+  // вид r∠θ
+  S.cplx = 'r∠θ'; S.angle = 'Deg';
+  C('1+i', '√(2)∠45');
+  C('√~4', '2∠90');
+  C('2+3', '5');
+  C('3−4i', '5∠−53.13010235');
+  C([...tok('1+i'), core.CX_RECT], '1+i');
+  S.cplx = 'a+bi';
+  C([...tok('1+i'), core.CX_POLAR], '√(2)∠45');
+  C([...tok('~2'), core.CX_POLAR], '2∠180');
+  C([...tok('1+i'), core.CX_POLAR, '→', 'B'], '√(2)∠45');
+  C('B', '1+i');
+  C('0→B', '0');
+  S.angle = 'Rad';
+  C([...tok('i'), core.CX_POLAR], '1∠[1/2]π');
+  // строчный ввод
+  S.io = 'Line';
+  C('(1+2i)÷(3−4i)', '−1⌟5+2⌟5i');
+  C('√~3', '1.732050808i');
+  S.io = 'Math';
+  // графики и таблицы комплексных чисел не знают
+  let err = '';
+  try { compileTokens(tok('X+i')); } catch (e) { err = e.type; }
+  t.eq(err, 'Syntax ERROR', 'i в формуле графика');
+  S.cplx = 'Real';
+  C('√~4', 'Non-Real ERROR');
+  mem.ans = null;
+  t.eq(core.cxText(evalTokens(tok('(1+2i)÷3')), 12), '0.333+0.667i', 'комплексное число в ячейке таблицы');
+}
 
 process.exit(t.done('Ядро') ? 1 : 0);
