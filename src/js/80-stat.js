@@ -512,10 +512,10 @@ function statReport(title, rows, menu, onExit) {
 
 // ────────── режим ──────────
 
-const SG_TYPES = ['Scatter', 'xyLine', 'Hist', 'MedBox', 'Bar', 'Broken'];
+const SG_TYPES = ['Scatter', 'xyLine', 'NPPlot', 'Pie', 'Hist', 'MedBox', 'Bar', 'N-Dist', 'Broken'];   // NPPlot, Pie, N-Dist — в 81-stat2.js
 const SG_MARKS = ['□', '×', '•'];
 const SG_TWO = (t) => t === 'Scatter' || t === 'xyLine';      // диаграммы двух переменных
-const newStatGraph = (i) => ({ on: i === 0, type: 'Scatter', x: 1, y: 2, f: 0, mark: 0, color: ['Blue', 'Red', 'Green'][i] });
+const newStatGraph = (i) => ({ on: i === 0, type: 'Scatter', x: 1, y: 2, f: 0, mark: 0, disp: '%', color: ['Blue', 'Red', 'Green'][i] });
 const ST_X0 = 42, ST_CW = 85.5;        // редактор списков: ширина левой колонки и столбца
 const statListName = (n) => 'List' + n;
 const statFreqName = (f) => (f ? 'List' + f : '1');
@@ -580,14 +580,8 @@ const statApp = {
         })),
         null, null, mi('SET', () => this.calcSet())
       ]),
-      null, null,
-      mi('DIST', [
-        mi('NORM', [mi('Npd', () => this.distForm('npd')), mi('Ncd', () => this.distForm('ncd')), mi('InvN', () => this.distForm('invn'))]),
-        null, null, null,
-        mi('BINOMIAL', [mi('Bpd', () => this.distForm('bpd')), mi('Bcd', () => this.distForm('bcd'))]),
-        mi('POISSON', [mi('Ppd', () => this.distForm('ppd')), mi('Pcd', () => this.distForm('pcd'))]),
-        null
-      ]),
+      mi('TEST', st2TestMenu(this)), mi('INTR', st2IntrMenu(this)),
+      mi('DIST', st2DistMenu(this)),
       mi('TOOL', [
         mi('SORTASC', () => this.sortFlow(1)), mi('SORTDES', () => this.sortFlow(-1)),
         mi('TOP', () => { this.row = 0; this.fix(); }), mi('BOTTOM', () => { this.row = Math.max(0, this.list(this.col).length - 1); this.fix(); })
@@ -649,6 +643,7 @@ const statApp = {
       else this.field.key(k, (x) => this.store(x), () => { this.field = null; });
       return;
     }
+    if (st2SubKey(this, k)) { this.fix(); return; }
     const f = fIndex(k);
     if (f >= 0) {
       if (k.shift) return;
@@ -669,6 +664,7 @@ const statApp = {
     this.fix();
   },
   tap(x, y) {
+    if (st2SubTap(this, x, y)) return;
     if (this.scr !== 'list' || this.field || y < 72 || y >= 168 || x < ST_X0) return;
     this.col = this.left + Math.min(3, Math.floor((x - ST_X0) / ST_CW));
     this.row = this.top + Math.floor((y - 72) / 24);
@@ -685,9 +681,9 @@ const statApp = {
     for (let c = 0; c < 4; c++) {
       const li = this.left + c, x = Math.round(ST_X0 + c * ST_CW), a = mem.lists[li] || [];
       lcd.mini(x + ST_CW / 2, 28, 'List ' + (li + 1), { px: 15, align: 'c' });
-      if (mem.listSub[li]) lcd.mini(x + ST_CW / 2, 52, mem.listSub[li], { px: 14, align: 'c', max: ST_CW - 8, bold: false });
+      st2SubDraw(this, li, x);
       for (let r = 0; r < 4; r++) {
-        const i = this.top + r, y = 72 + r * 24, on = li === this.col && i === this.row;
+        const i = this.top + r, y = 72 + r * 24, on = li === this.col && i === this.row && !this.sub;
         if (on) lcd.rect(x + 1, y, ST_CW - 1, 23, HILITE);
         if (i < a.length) lcd.mini(x + ST_CW - 5, y + 4, fmtFit(a[i].v, 8), { px: 15, align: 'r', max: ST_CW - 9, color: on ? '#fff' : '#000' });
       }
@@ -695,7 +691,7 @@ const statApp = {
     if (this.field) this.field.draw(2, 180, LW - 4);
     else {
       const a = this.list(this.col);
-      if (this.row < a.length) { const s = fmtNum(a[this.row].v); lcd.text(LW - 4 - [...s].length * 18, 168, s); }
+      if (this.row < a.length && !this.sub) { const s = fmtNum(a[this.row].v); lcd.text(LW - 4 - [...s].length * 18, 168, s); }
     }
     lcd.fmenu(this.menu.labels());
   },
@@ -707,18 +703,19 @@ const statApp = {
   pickList(set) { statAsk(['Select List', 'List No:'], 1, 26, set); },
   graphSet() {
     let cur = 0;
-    const types = [...SG_TYPES.slice(0, 2), null, null, null, ...SG_TYPES.slice(2, 5), null, null, SG_TYPES[5]];
+    const types = [...SG_TYPES.slice(0, 4), null, ...SG_TYPES.slice(4, 8), null, SG_TYPES[8]];
     statForm({
       rows: () => {
         const g = this.sg[cur];
         const rows = [
           { label: 'StatGraph' + (cur + 1), menu: [0, 1, 2].map((i) => ({ l: 'GRAPH' + (i + 1), fn: () => { cur = i; } })) },
           { label: 'Graph Type', value: g.type, menu: types.map((t) => t && { l: t, fn: () => { g.type = t; } }) },
-          { label: 'XList', value: statListName(g.x), menu: [{ l: 'LIST', fn: () => this.pickList((n) => { g.x = n; }) }] }
+          { label: g.type === 'Pie' ? 'Data' : 'XList', value: statListName(g.x), menu: [{ l: 'LIST', fn: () => this.pickList((n) => { g.x = n; }) }] }
         ];
+        if (g.type === 'Pie') rows.push({ label: 'Display', value: g.disp, menu: ['%', 'Data'].map((v) => ({ l: v, fn: () => { g.disp = v; } })) });
         if (SG_TWO(g.type)) rows.push({ label: 'YList', value: statListName(g.y), menu: [{ l: 'LIST', fn: () => this.pickList((n) => { g.y = n; }) }] });
-        if (g.type !== 'Bar') rows.push({ label: 'Frequency', value: statFreqName(g.f), menu: [{ l: '1', fn: () => { g.f = 0; } }, { l: 'LIST', fn: () => this.pickList((n) => { g.f = n; }) }] });
-        if (SG_TWO(g.type)) rows.push({ label: 'Mark Type', value: SG_MARKS[g.mark], menu: SG_MARKS.map((m, i) => ({ l: m, fn: () => { g.mark = i; } })) });
+        if (!['Bar', 'Pie', 'NPPlot'].includes(g.type)) rows.push({ label: 'Frequency', value: statFreqName(g.f), menu: [{ l: '1', fn: () => { g.f = 0; } }, { l: 'LIST', fn: () => this.pickList((n) => { g.f = n; }) }] });
+        if (SG_TWO(g.type) || g.type === 'NPPlot') rows.push({ label: 'Mark Type', value: SG_MARKS[g.mark], menu: SG_MARKS.map((m, i) => ({ l: m, fn: () => { g.mark = i; } })) });
         rows.push({ label: 'Color', value: g.color, menu: COLOR_NAMES.map((c) => ({ l: c, fn: () => { g.color = c; } })) });
         return rows;
       }
@@ -848,7 +845,9 @@ const statApp = {
   // ---------- диаграммы ----------
   // Данные диаграммы i → {cfg, kind, xs, ys, fs, …}
   prep(i) {
-    const cfg = this.sg[i], xs = this.nums(cfg.x);
+    const cfg = this.sg[i];
+    if (ST2_KIND[cfg.type]) return st2Prep(this, cfg);
+    const xs = this.nums(cfg.x);
     if (SG_TWO(cfg.type)) {
       const ys = this.nums(cfg.y);
       if (ys.length !== xs.length) fail('Dimension ERROR');
@@ -865,7 +864,7 @@ const statApp = {
     let k = 0;
     const next = () => {
       if (k >= ids.length) {
-        this.gr = { gs, regs: [], st: 'view', tr: null, menu: null };
+        this.gr = { gs: st2PieOnly(gs), regs: [], st: 'view', tr: null, menu: null };
         this.gr.menu = new FMenu(this.graphMenu());
         this.scr = 'graph';
         this.base.reset();
@@ -897,14 +896,16 @@ const statApp = {
   graphMenu() {
     const two = this.gr.gs.find((g) => g.kind === 'xy');
     if (two) return [mi('CALC', this.regMenu((kind) => this.regShow(kind, two.xs, two.ys, two.fs, two)))];
-    const one = this.gr.gs.find((g) => g.kind !== 'bar');
+    const one = this.gr.gs.find((g) => g.kind !== 'bar' && g.kind !== 'pie');
     return one ? [mi('1-VAR', () => this.show1(one.xs, one.fs))] : [];
   },
   // Окно просмотра по данным
   autoWin() {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, step = 0;   // step — ширина столбца гистограммы
     const X = (a, b) => { if (a < x0) x0 = a; if (b > x1) x1 = b; }, Y = (a, b) => { if (a < y0) y0 = a; if (b > y1) y1 = b; };
+    if (this.gr.gs.every((g) => g.kind === 'pie')) return;
     for (const g of this.gr.gs) {
+      if (st2Win(g, X, Y)) continue;
       if (g.kind === 'xy') { X(Math.min(...g.xs), Math.max(...g.xs)); Y(Math.min(...g.ys), Math.max(...g.ys)); }
       else if (g.kind === 'box') X(g.st.min, g.st.max);
       else if (g.kind === 'bar') { X(0.4, g.xs.length + 0.6); Y(Math.min(0, ...g.xs), Math.max(0, ...g.xs)); }
@@ -959,12 +960,13 @@ const statApp = {
       default:
     }
   },
-  traceLen(g) { return g.kind === 'box' ? 5 : g.kind === 'hist' || g.kind === 'broken' ? g.bins.length : g.xs.length; },
+  traceLen(g) { return g.kind === 'ndist' ? 0 : g.kind === 'box' ? 5 : g.kind === 'hist' || g.kind === 'broken' ? g.bins.length : g.xs.length; },
   // Высота «ящика» номер bi на экране (ось Y для него не имеет смысла)
   boxY(bi, count) { return GA.top + (GA.bottom - 24 - GA.top) * (bi + 1) / (count + 1) - 6; },
   // Точка трассировки: место на экране и подписи
   tracePoint() {
     const s = this.gr, g = s.gs[s.tr.g], i = s.tr.i;
+    if (g.kind === 'npp' || g.kind === 'pie') return st2TracePoint(g, i);
     if (g.kind === 'xy') return { px: X2P(g.xs[i]), py: Y2P(g.ys[i]), a: 'X=' + fmtFit(g.xs[i], 13), b: 'Y=' + fmtFit(g.ys[i], 13) };
     if (g.kind === 'bar') return { px: X2P(i + 1), py: Y2P(g.xs[i]), a: 'X=' + (i + 1), b: 'Y=' + fmtFit(g.xs[i], 13) };
     if (g.kind === 'box') {
@@ -980,12 +982,13 @@ const statApp = {
     const s = this.gr, g = lcd.g;
     statusBar(stdTags());
     lcd.clip(0, GA.top, LW, LH - GA.top);
-    drawAxes();
+    if (!s.gs.some((q) => q.kind === 'pie')) drawAxes();
     const boxes = s.gs.filter((q) => q.kind === 'box');
     const zeroY = Math.max(GA.top, Math.min(GA.bottom, Y2P(0)));
     for (const q of s.gs) {
       const color = COLORS[q.cfg.color] || '#000';
       g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 1.5; g.lineJoin = 'round'; g.lineCap = 'round'; g.setLineDash([]);
+      if (st2Draw(q)) continue;
       if (q.kind === 'xy') {
         if (q.cfg.type === 'xyLine') {
           g.beginPath();
@@ -1050,6 +1053,7 @@ const statApp = {
     this.sg = [newStatGraph(0), newStatGraph(1), newStatGraph(2)];
     this.cs = { x1: 1, f1: 0, x2: 1, y2: 2, f2: 0 };
     Object.assign(this, { col: 0, row: 0, left: 0, top: 0, field: null, scr: 'list', gr: null });
+    st2Reset();
   },
   save() { return { sg: this.sg, cs: this.cs, col: this.col, row: this.row }; },
   load(st) {
@@ -1060,7 +1064,7 @@ const statApp = {
         const d = newStatGraph(i);
         this.sg[i] = {
           on: !!g.on, type: SG_TYPES.includes(g.type) ? g.type : d.type, x: okList(g.x) ? g.x : d.x, y: okList(g.y) ? g.y : d.y,
-          f: okList(g.f) ? g.f : 0, mark: [0, 1, 2].includes(g.mark) ? g.mark : 0, color: COLORS[g.color] ? g.color : d.color
+          f: okList(g.f) ? g.f : 0, mark: [0, 1, 2].includes(g.mark) ? g.mark : 0, disp: g.disp === 'Data' ? 'Data' : '%', color: COLORS[g.color] ? g.color : d.color
         };
       });
     }

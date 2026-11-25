@@ -5,7 +5,7 @@ const path = require('path');
 
 // [файл, ...аргументы]: у статистики и уравнений вторая часть — сценарии «с клавиш» в браузере
 const order = [
-  ['engine.js'], ['stat.js', 'web'], ['eqn.js', 'ui'], ['recur.js', 'web'], ['conic.js', 'web'], ['dyna.js', 'web'], ['fin.js', 'web'],
+  ['glyphs.js'], ['engine.js'], ['stat.js', 'web'], ['stat2.js', 'web'], ['eqn.js', 'ui'], ['recur.js', 'web'], ['conic.js', 'web'], ['dyna.js', 'web'], ['fin.js', 'web'],
   ['ui.js'], ['monkey.js', '9000', '1']
 ];
 let bad = 0;
