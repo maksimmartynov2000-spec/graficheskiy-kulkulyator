@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="app-build" content="2026-11-25·6ae72854">
+<meta name="app-build" content="2026-11-25·7a7fab1b">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#d9dde3" media="(prefers-color-scheme: light)">
@@ -558,7 +558,8 @@ const R = (v, ex, dec) => ({ v, ex: ex || null, dec: !!dec });
 const RI = (n) => R(n, exInt(n), false);
 const RX = (ex, dec) => R(exVal(ex), ex, dec);
 const r15 = (x) => (x === 0 || !Number.isFinite(x) ? x : Number(x.toPrecision(15)));
-const isNum = (a) => !!a && typeof a === 'object' && typeof a.v === 'number';
+const isCx = (a) => !!a && a.cx === true;                 // комплексное число (см. 12-complex.js)
+const isNum = (a) => !!a && typeof a === 'object' && typeof a.v === 'number' && !a.cx;
 
 // Результат «не точной» функции: целые значения от точных аргументов остаются точными (log 100 = 2)
 function RF(v, exactIn, dec) {
@@ -772,6 +773,232 @@ function numRow(x, mode, math) {
     if (row) return row;
   }
   return D(fmtNum(x.v));
+}
+
+// ══════ 12-complex.js — комплексные числа ══════
+//
+// Комплексное число — объект {cx: true, re, im, v, ex, dec}: re и im — обычные числа {v, ex, dec},
+// поэтому части показываются дробями и корнями. Поля v (= re.v), ex (null) и dec нужны только затем,
+// чтобы код, не знающий о комплексных числах, не падал; считать с таким объектом как с вещественным
+// нельзя — isNum() для него даёт false, а isCx() — true (обе проверки лежат в 10-num.js).
+// Вещественное число остаётся прежним объектом: CX() возвращает комплексное, только когда мнимая часть не ноль.
+// Подключение: разбор и вычисление — в 20-parse.js (знаки «i» и «∠», вызовы cx1/cx2), показ — valRow().
+
+function CX(re, im) {
+  if (im.v === 0) return re;
+  return { cx: true, re, im, v: re.v, ex: null, dec: re.dec || im.dec };
+}
+const cxRe = (z) => (isCx(z) ? z.re : z);
+const cxIm = (z) => (isCx(z) ? z.im : RI(0));
+const cxExact = (z) => !!(cxRe(z).ex && cxIm(z).ex);
+
+// Части, полученные через синус и косинус: убираем «шум» в последних знаках
+function cxTidy(re, im, exactIn, dec) {
+  const sc = Math.max(Math.abs(re), Math.abs(im));
+  const fix = (x) => (Math.abs(x) < 1e-13 * sc ? 0 : r15(x));
+  return CX(RF(fix(re), exactIn, dec), RF(fix(im), exactIn, dec));
+}
+
+// ---------- арифметика ----------
+const cxAdd = (a, b) => CX(sAdd(cxRe(a), cxRe(b)), sAdd(cxIm(a), cxIm(b)));
+const cxSub = (a, b) => CX(sSub(cxRe(a), cxRe(b)), sSub(cxIm(a), cxIm(b)));
+const cxNeg = (a) => CX(sNeg(cxRe(a)), sNeg(cxIm(a)));
+const cxConj = (a) => CX(cxRe(a), sNeg(cxIm(a)));
+function cxMul(a, b) {
+  const p = cxRe(a), q = cxIm(a), r = cxRe(b), s = cxIm(b);
+  return CX(sSub(sMul(p, r), sMul(q, s)), sAdd(sMul(p, s), sMul(q, r)));
+}
+function cxDiv(a, b) {
+  const p = cxRe(a), q = cxIm(a), r = cxRe(b), s = cxIm(b);
+  if (r.v === 0 && s.v === 0) fail('Ma ERROR');
+  if (s.v === 0) return CX(sDiv(p, r), sDiv(q, r));
+  const den = sAdd(sMul(r, r), sMul(s, s));
+  return CX(sDiv(sAdd(sMul(p, r), sMul(q, s)), den), sDiv(sSub(sMul(q, r), sMul(p, s)), den));
+}
+
+// Модуль: точный, когда сумма квадратов частей — точный квадрат или корень
+function cxAbs(z) {
+  if (!isCx(z)) return z.v < 0 ? sNeg(z) : z;
+  const s = sAdd(sMul(z.re, z.re), sMul(z.im, z.im));
+  return s.ex ? sSqrt(s) : RF(Math.hypot(z.re.v, z.im.v), false, s.dec);
+}
+
+// Направление вектора (re, im): целое число шагов по 15°, если угол точный; иначе null
+function cxStep15(re, im) {
+  if (!re.ex || !im.ex) return null;
+  const t = Math.atan2(im.v, re.v) * 12 / Math.PI, k = Math.round(t);
+  if (Math.abs(t - k) > 1e-9) return null;
+  // проверка без округлений: re·sin φ = im·cos φ
+  const l = exMul(re.ex, sinEx(k)), r = exMul(im.ex, sinEx(k + 6));
+  return l && r && exEq(l, r) ? k : null;
+}
+// Аргумент: в текущих единицах угла, а при rad = true — всегда в радианах (для ln и степеней)
+function cxArg(z, rad) {
+  const re = cxRe(z), im = cxIm(z), dec = re.dec || im.dec;
+  if (re.v === 0 && im.v === 0) return RI(0);
+  const unit = rad ? 'Rad' : S.angle;
+  const k = cxStep15(re, im);
+  if (k !== null) {
+    const deg = k * 15;
+    if (unit === 'Deg') return R(deg, exInt(deg), dec);
+    if (unit === 'Gra') return RX(exRat(deg * 10, 9), dec);
+    const m = mkTerm(deg, 180, 1);
+    return m[0] ? RX({ t: [m], pi: true }, dec) : R(0, exInt(0), dec);
+  }
+  const t = Math.atan2(im.v, re.v);
+  return R(unit === 'Rad' ? t : r15(t * (unit === 'Deg' ? 180 : 200) / Math.PI), null, dec);
+}
+
+// Главное значение корня; √ от отрицательного вещественного — точно: √(−4) = 2i
+function cxSqrt(z) {
+  if (!isCx(z)) return z.v < 0 ? CX(RI(0), sSqrt(sNeg(z))) : sSqrt(z);
+  const r = cxAbs(z), two = RI(2);
+  const pos = (x) => (x.v < 0 ? RI(0) : x);
+  const re = sSqrt(pos(sDiv(sAdd(r, z.re), two))), im = sSqrt(pos(sDiv(sSub(r, z.re), two)));
+  return CX(re, z.im.v < 0 ? sNeg(im) : im);
+}
+
+// e^z: мнимая часть показателя — в радианах; e^(iπ·k/12) считается точно
+function cxExp(z) {
+  const a = cxRe(z), b = cxIm(z), dec = a.dec || b.dec;
+  let c = null, s = null;
+  if (b.ex && b.ex.pi) {
+    const q = exMul({ t: b.ex.t, pi: false }, exInt(12));
+    if (q && exIsInt(q)) {
+      const k = q.t.length ? q.t[0][0] : 0;
+      c = RX(sinEx(k + 6), dec); s = RX(sinEx(k), dec);
+    }
+  }
+  if (c && a.v === 0) return CX(c, s);
+  const m = Math.exp(a.v), t = b.v;
+  return cxTidy(m * (c ? c.v : Math.cos(t)), m * (s ? s.v : Math.sin(t)), false, dec);
+}
+// Главное значение логарифма: ln|z| + i·Arg z
+function cxLn(z) {
+  const r = cxAbs(z);
+  if (r.v === 0) fail('Ma ERROR');
+  return CX(RF(r15(Math.log(r.v)), !!r.ex, r.dec), cxArg(z, true));
+}
+function cxLog(z) {
+  const r = cxAbs(z);
+  if (r.v === 0) fail('Ma ERROR');
+  return CX(RF(r15(Math.log10(r.v)), !!r.ex, r.dec), R(r15(cxArg(z, true).v / Math.LN10), null, z.dec));
+}
+
+// Степень: целый показатель — точно (умножением), 1/2 — корень, остальное — через e^(b·Ln a)
+function cxPow(a, b) {
+  const zero = cxRe(a).v === 0 && cxIm(a).v === 0;
+  if (!isCx(b)) {
+    if (Number.isInteger(b.v) && Math.abs(b.v) <= 200) {
+      if (zero && b.v <= 0) fail('Ma ERROR');
+      let n = Math.abs(b.v), base = a, res = RI(1);
+      while (n) {
+        if (n & 1) res = cxMul(res, base);
+        n >>= 1;
+        if (n) base = cxMul(base, base);
+      }
+      return b.v < 0 ? cxDiv(RI(1), res) : res;
+    }
+    if (b.ex && exIsRat(b.ex) && b.ex.t.length && b.ex.t[0][0] === 1 && b.ex.t[0][1] === 2) return cxSqrt(a);
+  }
+  if (zero) { if (cxRe(b).v > 0) return RI(0); fail('Ma ERROR'); }
+  const w = cxMul(b, cxLn(a));
+  const m = Math.exp(cxRe(w).v), t = cxIm(w).v;
+  return cxTidy(m * Math.cos(t), m * Math.sin(t), cxExact(a) && cxExact(b), a.dec || b.dec);
+}
+
+// ---------- функции одного и двух аргументов (вызываются из s1 и s2 в 20-parse.js) ----------
+function cx1(f, z) {
+  switch (f) {
+    case 'neg': return cxNeg(z);
+    case 'abs': return cxAbs(z);
+    case 'arg': return cxArg(z);
+    case 'conjg': return cxConj(z);
+    case 'rep': return cxRe(z);
+    case 'imp': return cxIm(z);
+    case 'sq': return cxMul(z, z);
+    case 'inv': return cxDiv(RI(1), z);
+    case 'sqrt': return cxSqrt(z);
+    case 'exp': return cxExp(z);
+    case 'ln': return cxLn(z);
+    case 'log': return cxLog(z);
+    case 'p10': return cxPow(RI(10), z);
+    case 'cbrt': return cxPow(z, RX(exRat(1, 3)));
+    case 'pct': return cxDiv(z, RI(100));
+    case 'int': case 'intg': case 'frac':
+      if (isCx(z)) return CX(s1(f, z.re), s1(f, z.im));
+      return s1(f, z);
+    default: return fail('Non-Real ERROR');   // тригонометрия, факториал и прочее — только для вещественных
+  }
+}
+function cx2(op, a, b) {
+  switch (op) {
+    case '+': return cxAdd(a, b);
+    case '−': return cxSub(a, b);
+    case '×': return cxMul(a, b);
+    case '÷': return cxDiv(a, b);
+    case '^': return cxPow(a, b);
+    case 'xrt': return cxPow(b, cxDiv(RI(1), a));
+    case '∠': {                        // r∠θ, θ — в текущих единицах угла
+      if (isCx(a) || isCx(b)) fail('Non-Real ERROR');
+      const c = trigExact('cos', b) || R(fCos(b.v), null, b.dec), s = trigExact('sin', b) || R(fSin(b.v), null, b.dec);
+      return CX(sMul(a, c), sMul(a, s));
+    }
+    default: return fail('Non-Real ERROR');   // сравнения, nPr, nCr, деление нацело
+  }
+}
+
+// ---------- показ ----------
+// Скобки вокруг мнимой части нужны, если в ней есть «+» или «−» не в начале и не в записи порядка (1.2ᴇ+15)
+function cxNeedsParen(row) {
+  for (let k = 1; k < row.length; k++) if ((row[k] === '+' || row[k] === '−') && row[k - 1] !== G.EE) return true;
+  return false;
+}
+const cxPolar = (form) => (form ? form === 'polar' : S.cplx === 'r∠θ');
+// Строка ответа: a+bi либо r∠θ. form: 'polar' | 'rect' | null (по настройке Complex Mode)
+function cxRow(z, mode, math, form) {
+  if (math === undefined) math = S.io === 'Math';
+  const re = cxRe(z), im = cxIm(z);
+  const m = (mode || 'auto') === 'auto' && (re.dec || im.dec) ? 'dec' : (mode || 'auto');
+  if (cxPolar(form)) return [...numRow(cxAbs(z), m, math), '∠', ...numRow(cxArg(z), m, math)];
+  const row = re.v !== 0 || im.v === 0 ? numRow(re, m, math) : [];
+  if (im.v === 0) return row;
+  const neg = im.v < 0;
+  if (row.length) row.push(neg ? '−' : '+'); else if (neg) row.push('−');
+  let ir = numRow(neg ? sNeg(im) : im, m, math);
+  if (!(ir.length === 1 && ir[0] === '1')) {
+    if (cxNeedsParen(ir)) ir = ['(', ...ir, ')'];
+    row.push(...ir);
+  }
+  row.push('i');
+  return row;
+}
+// Строка ответа для любого числа — вещественного или комплексного
+function valRow(x, mode, math, form) {
+  return isCx(x) || form === 'polar' ? cxRow(x, mode, math, form) : numRow(x, mode, math);
+}
+// Есть ли у числа точная запись, отличная от десятичной (для S⇔D)
+function valExact(x, math, form) {
+  if (!isCx(x) && form !== 'polar') return !!exactForm(x, math);
+  const parts = cxPolar(form) ? [cxAbs(x), cxArg(x)] : [cxRe(x), cxIm(x)];
+  return parts.some((p) => !!exactForm(p, math));
+}
+// S⇔D для комплексного ответа: обе части разом. e — запись истории {val, mode, math, form}
+function cxToggleSD(e) {
+  if (!valExact(e.val, e.math, e.form)) return;
+  const shown = e.mode !== 'dec' && (e.mode === 'exact' || !e.val.dec);
+  e.mode = shown ? 'dec' : 'exact';
+}
+// Комплексное число одной строкой для таблиц (списки, матрицы): «1.5+2i», не длиннее n знаков
+function cxText(z, n) {
+  let s = '';
+  for (let d = 10; d >= 1; d--) {
+    const p = (v) => fmtNum(Number(v.toPrecision(d)), { disp: 'Norm', dispN: S.dispN });
+    const re = z.re.v !== 0 ? p(z.re.v) : '', a = Math.abs(z.im.v);
+    s = re + (z.im.v < 0 ? '−' : re ? '+' : '') + (a === 1 ? '' : p(a)) + 'i';
+    if ([...s].length <= n) break;
+  }
+  return s;
 }
 
 // ══════ 15-numeric.js — вещественные функции и численные методы (без точных форм) ══════
@@ -1158,7 +1385,8 @@ class Mat { constructor(m) { this.m = m; } }
 const DONE = { done: true };
 const isL = (x) => x instanceof LList;
 const isM = (x) => x instanceof Mat;
-const needNum = (x) => { if (!isNum(x)) fail('Argument ERROR'); return x; };
+const needNum = (x) => { if (isCx(x)) fail('Non-Real ERROR'); if (!isNum(x)) fail('Argument ERROR'); return x; };
+const needScalar = (x) => { if (!isNum(x) && !isCx(x)) fail('Argument ERROR'); return x; };   // число, в том числе комплексное
 
 const INVS = G.INV + ' ';
 const PRE = new Map([
@@ -1170,7 +1398,8 @@ const PRE = new Map([
   ['√', 'sqrt'], [G.CBRT, 'cbrt'], [G.NEG, 'neg'],
   ['Abs ', 'abs'], ['Int ', 'int'], ['Frac ', 'frac'], ['Intg ', 'intg'], ['Not ', 'not'],
   ['Sum ', 'sum'], ['Prod ', 'prod'], ['Dim ', 'dim'], ['Cuml ', 'cuml'], ['Percent ', 'percent'], ['ΔList ', 'dlist'],
-  ['Det ', 'det'], ['Trn ', 'trn'], ['Identity ', 'ident'], ['Ref ', 'ref'], ['Rref ', 'rref']
+  ['Det ', 'det'], ['Trn ', 'trn'], ['Identity ', 'ident'], ['Ref ', 'ref'], ['Rref ', 'rref'],
+  ['Arg ', 'arg'], ['Conjg ', 'conjg'], ['ReP ', 'rep'], ['ImP ', 'imp']
 ]);
 const POST = new Map([[G.SQ, 'sq'], [G.INV, 'inv'], ['!', 'fact'], ['°', 'deg'], [G.RAD, 'rad'], [G.GRA, 'gra'], ['%', 'pct']]);
 const FNA = new Map([
@@ -1188,6 +1417,11 @@ const FNA = new Map([
   ['BinomialPD(', 'binpd'], ['BinomialCD(', 'bincd'], ['PoissonPD(', 'poipd'], ['PoissonCD(', 'poicd']
 ]);
 const RELS = new Set(['=', '≠', '>', '<', '≥', '≤']);
+// Величины из меню VARS (Xmin, x̄, Strt…): знак → функция, дающая текущее значение. Заполняется в 61-vars.js
+const EXT_VARS = new Map();
+const CX_POLAR = '▶r∠θ', CX_RECT = '▶a+bi';   // команды в конце выражения: показать ответ как r∠θ или как a+bi
+let cxHint = null;                            // какой вид ответа запрошен в последнем расчёте ('polar' | 'rect')
+const cxTakeHint = () => { const h = cxHint; cxHint = null; return h; };   // забрать запрос и сбросить его
 const varOf = (t) => (t === 'x' ? 'X' : t !== undefined && Object.prototype.hasOwnProperty.call(VIX, t) ? t : undefined);
 const isDigit = (t) => t.length === 1 && t >= '0' && t <= '9';
 
@@ -1213,6 +1447,10 @@ function lex(toks) {
         exp = sg * Number(es);
       }
       out.push({ n: numFromLiteral(mant, exp), pos: start });
+    } else if (EXT_VARS.has(t)) {
+      const v = Number(EXT_VARS.get(t)()) || 0;
+      out.push({ n: R(v, Number.isInteger(v) && Math.abs(v) < 1e15 ? exInt(v) : null, false), pos: i });
+      i++;
     } else { out.push({ t, pos: i }); i++; }
   }
   return out;
@@ -1226,20 +1464,20 @@ function parse(toks) {
   const pos = () => (i < lx.length ? lx[i].pos : toks.length);
   const syn = () => fail('Syntax ERROR', pos());
   const eat = (t) => { if (i < lx.length && lx[i].t === t) { i++; return true; } return false; };
-  const atEnd = () => i >= lx.length || lx[i].t === '→';
+  const atEnd = () => i >= lx.length || lx[i].t === '→' || lx[i].t === CX_POLAR || lx[i].t === CX_RECT;
   const close = (t) => { if (!eat(t) && !atEnd()) syn(); };
 
   const startsL5 = () => {
     if (i >= lx.length) return false;
     const t = lx[i].t;
-    return t !== undefined && (varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV);
+    return t !== undefined && (varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === 'i');
   };
   const startsOperand = () => {
     if (i >= lx.length) return false;
     const l = lx[i];
     if (l.n) return true;
     const t = l.t;
-    return varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === '(' || t === '{' || t === '[' || t === 'List ' || t === 'Mat ' ||
+    return varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === 'i' || t === '(' || t === '{' || t === '[' || t === 'List ' || t === 'Mat ' ||
       t === 'Ran# ' || PRE.has(t) || FNA.has(t);
   };
 
@@ -1266,7 +1504,9 @@ function parse(toks) {
     let a = pImp7();
     for (;;) {
       const t = pt();
-      if (t === G.PERM || t === G.COMB) { i++; a = { k: 'bin', op: t === G.PERM ? 'nPr' : 'nCr', a, b: pImp7() }; } else return a;
+      if (t === G.PERM || t === G.COMB) { i++; a = { k: 'bin', op: t === G.PERM ? 'nPr' : 'nCr', a, b: pImp7() }; }
+      else if (t === '∠') { i++; a = { k: 'bin', op: '∠', a, b: pImp7() }; }      // полярная запись r∠θ
+      else return a;
     }
   }
   function pImp7() {                 // 2√3, 2(3), (1)(2), 2 sin 30
@@ -1333,6 +1573,7 @@ function parse(toks) {
     const t = l.t;
     if (varOf(t) !== undefined) { i++; return { k: 'var', n: varOf(t) }; }
     if (t === 'π') { i++; return { k: 'pi' }; }
+    if (t === 'i') { i++; return { k: 'imag' }; }
     if (t === 'Ans') { i++; return { k: 'ans' }; }
     if (t === '(') { i++; const e = pRel(); close(')'); return e; }
     if (t === '{') {
@@ -1392,7 +1633,8 @@ function parse(toks) {
   }
 
   if (!lx.length) syn();
-  const e = pRel();
+  let e = pRel();
+  if (pt() === CX_POLAR || pt() === CX_RECT) { e = { k: 'cxform', f: pt() === CX_POLAR ? 'polar' : 'rect', a: e }; i++; }
   if (eat('→')) {
     const tg = pPost();
     if (i < lx.length || !['var', 'listref', 'matref', 'idx'].includes(tg.k)) syn();
@@ -1461,9 +1703,11 @@ function angMark(f, x) {             // 30° в текущих единицах 
 
 // ---------- функции одного и двух чисел (с точными формами) ----------
 function s1(f, x) {
+  if (isCx(x)) return cx1(f, x);
   switch (f) {
     case 'neg': return sNeg(x);
-    case 'sqrt': return sSqrt(x);
+    case 'sqrt': if (x.v < 0 && S.cplx !== 'Real') return cx1(f, x); return sSqrt(x);
+    case 'arg': case 'conjg': case 'rep': case 'imp': return cx1(f, x);
     case 'abs': return x.v < 0 ? sNeg(x) : x;
     case 'sq': return sMul(x, x);
     case 'inv': return sDiv(RI(1), x);
@@ -1478,7 +1722,9 @@ function s1(f, x) {
     case 'sin': case 'cos': case 'tan': { const e = trigExact(f, x); if (e) return e; break; }
     case 'asin': case 'acos': case 'atan': { const e = atrigExact(f, x); if (e) return e; break; }
     case 'deg': case 'rad': case 'gra': return angMark(f, x);
-    case 'log': case 'ln': if (x.v < 0) fail('Non-Real ERROR'); break;
+    case 'log': case 'ln':
+      if (x.v < 0) { if (S.cplx !== 'Real') return cx1(f, x); fail('Non-Real ERROR'); }
+      break;
     default:
   }
   const fn = F1[f];
@@ -1486,6 +1732,9 @@ function s1(f, x) {
   return RF(fn(x.v), !!x.ex, x.dec);
 }
 function s2(op, a, b) {
+  if (isCx(a) || isCx(b) || op === '∠') return cx2(op, a, b);
+  // в комплексном режиме степень отрицательного числа с нецелым показателем — главное комплексное значение
+  if (S.cplx !== 'Real' && ((op === '^' && a.v < 0 && !Number.isInteger(b.v)) || (op === 'xrt' && b.v < 0 && !(Number.isInteger(a.v) && a.v % 2)))) return cx2(op, a, b);
   switch (op) {
     case '+': return sAdd(a, b);
     case '−': return sSub(a, b);
@@ -1502,16 +1751,22 @@ function s2(op, a, b) {
 }
 
 // ---------- списки ----------
-function zipL(a, b, f) {
+// need — проверка элементов: needNum (только вещественные, по умолчанию) или needScalar (и комплексные)
+function zipL(a, b, f, need) {
+  need = need || needNum;
   if (isL(a) && isL(b)) {
     if (a.a.length !== b.a.length) fail('Dimension ERROR');
-    return new LList(a.a.map((x, i) => f(x, b.a[i])));
+    return new LList(a.a.map((x, i) => f(need(x), need(b.a[i]))));
   }
-  if (isL(a)) return new LList(a.a.map((x) => f(x, needNum(b))));
-  if (isL(b)) return new LList(b.a.map((y) => f(needNum(a), y)));
-  return f(needNum(a), needNum(b));
+  if (isL(a)) { need(b); return new LList(a.a.map((x) => f(need(x), b))); }
+  if (isL(b)) { need(a); return new LList(b.a.map((y) => f(a, need(y)))); }
+  return f(need(a), need(b));
 }
-const needList = (x) => { if (!isL(x)) fail('Argument ERROR'); return x.a; };
+const needList = (x) => {
+  if (!isL(x)) fail('Argument ERROR');
+  if (x.a.some(isCx)) fail('Complex Number In List');
+  return x.a;
+};
 const fvals = (a) => a.map((x) => x.v);
 
 function listStats(xs, fs) {          // среднее, медиана и т. д. с частотами
@@ -1548,7 +1803,7 @@ function matMul(A, B) {
     m.push([]);
     for (let j = 0; j < c2; j++) {
       let s = RI(0);
-      for (let k = 0; k < c; k++) s = sAdd(s, sMul(A.m[i][k], B.m[k][j]));
+      for (let k = 0; k < c; k++) s = s2('+', s, s2('×', A.m[i][k], B.m[k][j]));
       m[i].push(s);
     }
   }
@@ -1557,6 +1812,7 @@ function matMul(A, B) {
 const matIdent = (n) => new Mat(Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => RI(i === j ? 1 : 0))));
 // Приведение к ступенчатому виду; возвращает {m, det, rank}
 function matElim(A, reduce, ncols) {
+  if (A.m.some((r) => r.some(isCx))) fail('Complex Number In Matrix');
   const m = A.m.map((r) => r.slice());
   const rows = m.length, cols = m[0].length;
   let det = RI(1), row = 0;
@@ -1598,7 +1854,7 @@ function matPow(A, k) {
 
 // ---------- вычисление ----------
 const getVar = (n) => mem.vars[n] || RI(0);
-function setVar(n, x) { mem.vars[n] = x; fv[VIX[n]] = x.v; }
+function setVar(n, x) { mem.vars[n] = x; fv[VIX[n]] = isCx(x) ? NaN : x.v; }
 function getList(n) {
   const a = n === 'Ans' ? mem.listAns : mem.lists[n - 1];
   if (!a || !a.length) fail('Dimension ERROR');
@@ -1626,6 +1882,8 @@ function evalAst(n) {
     case 'var': return getVar(n.n);
     case 'pi': return RX(exPi());
     case 'ans': return mem.ans || RI(0);
+    case 'imag': return CX(RI(0), RI(1));
+    case 'cxform': { const v = evalAst(n.a); cxHint = n.f; return v; }
     case 'pre': return evPre(n.f, evalAst(n.a));
     case 'post': {
       const x = evalAst(n.a);
@@ -1634,15 +1892,15 @@ function evalAst(n) {
         if (n.f === 'inv') return matInv(x);
         fail('Argument ERROR');
       }
-      return isL(x) ? new LList(x.a.map((q) => s1(n.f, q))) : s1(n.f, needNum(x));
+      return isL(x) ? new LList(x.a.map((q) => s1(n.f, q))) : s1(n.f, needScalar(x));
     }
     case 'bin': return evBin(n.op, evalAst(n.a), evalAst(n.b));
     case 'mixed': {
       const a = needNum(evalAst(n.a)), b = needNum(evalAst(n.b)), c = needNum(evalAst(n.c));
       return a.v < 0 ? sSub(a, sDiv(b, c)) : sAdd(a, sDiv(b, c));
     }
-    case 'list': return new LList(n.items.map((q) => needNum(evalAst(q))));
-    case 'mat': return new Mat(n.rows.map((r) => r.map((q) => needNum(evalAst(q)))));
+    case 'list': return new LList(n.items.map((q) => needScalar(evalAst(q))));
+    case 'mat': return new Mat(n.rows.map((r) => r.map((q) => needScalar(evalAst(q)))));
     case 'listref': return getList(n.n);
     case 'matref': return getMat(n.n);
     case 'idx': {
@@ -1663,12 +1921,14 @@ function evalAst(n) {
     }
     case 'sto': {
       const v = evalAst(n.a), tg = n.tg;
-      if (tg.k === 'var') setVar(tg.n, needNum(v));
+      if (tg.k === 'var') setVar(tg.n, needScalar(v));
       else if (tg.k === 'listref') {
         if (!isL(v) || tg.n === 'Ans') fail('Syntax ERROR');
+        if (v.a.some(isCx)) fail('Complex Number In List');        // редактор списков работает только с вещественными
         mem.lists[tg.n - 1] = v.a.slice();
       } else if (tg.k === 'matref') {
         if (!isM(v) || tg.n === 'Ans') fail('Syntax ERROR');
+        if (v.m.some((r) => r.some(isCx))) fail('Complex Number In Matrix');
         mem.mats[tg.n] = v.m.map((r) => r.slice());
       } else {
         const p = needNum(evalAst(tg.i)).v;
@@ -1698,6 +1958,7 @@ function evPre(f, x) {
     }
     case 'dim':
       if (isM(x)) return new LList(mDim(x).map(RI));
+      if (isL(x)) return RI(x.a.length);
       return RI(needList(x).length);
     case 'cuml': { let s = RI(0); return new LList(needList(x).map((q) => (s = sAdd(s, q)))); }
     case 'percent': { const a = needList(x), s = a.reduce((p, q) => sAdd(p, q), RI(0)); return new LList(a.map((q) => sDiv(sMul(q, RI(100)), s))); }
@@ -1709,32 +1970,30 @@ function evPre(f, x) {
     default:
   }
   if (isM(x)) {
-    if (f === 'neg') return new Mat(x.m.map((r) => r.map(sNeg)));
+    if (f === 'neg') return new Mat(x.m.map((r) => r.map((q) => s1('neg', q))));
     if (f === 'abs') return new Mat(x.m.map((r) => r.map((q) => s1('abs', q))));
     fail('Argument ERROR');
   }
-  return isL(x) ? new LList(x.a.map((q) => s1(f, q))) : s1(f, needNum(x));
+  return isL(x) ? new LList(x.a.map((q) => s1(f, q))) : s1(f, needScalar(x));
 }
 
 function evBin(op, a, b) {
   if (isM(a) || isM(b)) {
     if (isL(a) || isL(b)) fail('Argument ERROR');
     if (isM(a) && isM(b)) {
-      if (op === '+') return matAdd(a, b, sAdd);
-      if (op === '−') return matAdd(a, b, sSub);
+      if (op === '+' || op === '−') return matAdd(a, b, (x, y) => s2(op, x, y));
       if (op === '×') return matMul(a, b);
       fail('Argument ERROR');
     }
     if (isM(a)) {
-      if (op === '×') return new Mat(a.m.map((r) => r.map((x) => sMul(x, b))));
-      if (op === '÷') return new Mat(a.m.map((r) => r.map((x) => sDiv(x, b))));
-      if (op === '^') return matPow(a, b.v);
+      if (op === '×' || op === '÷') { needScalar(b); return new Mat(a.m.map((r) => r.map((x) => s2(op, x, b)))); }
+      if (op === '^') return matPow(a, needNum(b).v);
       fail('Argument ERROR');
     }
-    if (op === '×') return new Mat(b.m.map((r) => r.map((x) => sMul(a, x))));
+    if (op === '×') { needScalar(a); return new Mat(b.m.map((r) => r.map((x) => s2('×', a, x)))); }
     fail('Argument ERROR');
   }
-  return zipL(a, b, (x, y) => s2(op, x, y));
+  return zipL(a, b, (x, y) => s2(op, x, y), needScalar);
 }
 
 function evCall(n) {
@@ -1806,7 +2065,7 @@ function evCall(n) {
       try {
         for (let x = a; st.v > 0 ? x.v <= b.v + 1e-12 * Math.abs(b.v) : x.v >= b.v - 1e-12 * Math.abs(b.v); x = sAdd(x, st)) {
           setVar(name, x);
-          out.push(needNum(evalAst(A[0])));
+          out.push(needScalar(evalAst(A[0])));
         }
       } finally { setVar(name, saved || RI(0)); if (!saved) delete mem.vars[name]; }
       if (!out.length) fail('Ma ERROR');
@@ -1895,7 +2154,7 @@ function evCall(n) {
         const name = A[1].n, saved = mem.vars[name];
         let s = RI(0);
         try {
-          for (let k = a; k <= b; k += st) { setVar(name, RI(k)); s = sAdd(s, needNum(evalAst(A[0]))); }
+          for (let k = a; k <= b; k += st) { setVar(name, RI(k)); s = s2('+', s, needScalar(evalAst(A[0]))); }
         } finally { setVar(name, saved || RI(0)); if (!saved) delete mem.vars[name]; }
         return s;
       }
@@ -1941,7 +2200,7 @@ function compileAst(n) {
     case 'num': { const v = n.v.v; return () => v; }
     case 'var': { const ix = VIX[n.n]; return () => fv[ix]; }
     case 'pi': return () => Math.PI;
-    case 'ans': return () => (mem.ans ? mem.ans.v : 0);
+    case 'ans': return () => (mem.ans ? (isCx(mem.ans) ? NaN : mem.ans.v) : 0);
     case 'pre': case 'post': {
       const f = F1[n.f], a = compileAst(n.a);
       if (!f) fail('Syntax ERROR');
@@ -2020,11 +2279,13 @@ function compileAst(n) {
 const evalTokens = (toks) => evalAst(parse(toks));
 function compileTokens(toks, name) {     // → (x) => число; переменная по умолчанию X
   const f = compileAst(parse(toks)), ix = VIX[name || 'X'];
-  return (x) => { fv[ix] = x; return f(); };
+  // значение переменной после счёта возвращается: иначе fv расходится с mem.vars (X в Solver после таблицы)
+  return (x) => { const sv = fv[ix]; fv[ix] = x; const y = f(); fv[ix] = sv; return y; };
 }
 // Значение числового поля (V-Window, таблицы, списки): выражение → число
 function evalNumber(toks) {
   const v = evalTokens(toks);
+  if (isCx(v)) fail('Non-Real ERROR');
   if (!isNum(v)) fail('Syntax ERROR');
   return v;
 }
@@ -2745,6 +3006,8 @@ function typeKey(ed, k, xvar) {
   }
   if (k.shift) {
     switch (k.id) {
+      case '0': ed.ins('i'); return true;       // мнимая единица
+      case 'XTT': ed.ins('∠'); return true;     // полярная запись r∠θ
       case 'SQR': if (m) ed.tpl('sqrt'); else ed.ins('√'); return true;
       case 'POW': if (m) ed.tpl('root'); else ed.ins(G.XRT); return true;
       case 'LOG': if (m) ed.tpl('pow10'); else ed.ins(G.TEN); return true;
@@ -2916,7 +3179,7 @@ function statusBar(tags) {
   lcd.status(tags, UI.shift ? 'S' : UI.alock ? 'AL' : UI.alpha ? 'A' : null);
 }
 const dispTag = () => (S.disp === 'Norm' ? 'Norm' + S.dispN : S.disp + S.dispN);
-const stdTags = () => [S.io, S.angle, dispTag(), S.frac, 'Real'];
+const stdTags = () => [S.io, S.angle, dispTag(), S.frac, S.cplx];
 
 // ---------- редактор на экране ----------
 // Нарисовать редактор в окне (x, y — левый край и средняя линия). Возвращает раскладку
@@ -3324,7 +3587,7 @@ UI.apps.menu = mainMenu;
 const SETUP_DEF = {
   io: ['Input/Output', ['Math', 'Line']],
   mode: ['Mode', ['Comp']],
-  cplx: ['Complex Mode', ['Real']],
+  cplx: ['Complex Mode', ['Real', 'a+bi', 'r∠θ']],
   frac: ['Frac Result', ['d/c', 'ab/c']],
   funcType: ['Func Type', ['Y=', 'r=', 'Param', 'X=', 'Y>', 'Y<', 'Y≥', 'Y≤']],
   drawType: ['Draw Type', ['Connect', 'Plot']],
@@ -3404,6 +3667,8 @@ function fmtFit(v, n) {
   return s;
 }
 
+const valText = (x, n) => (isCx(x) ? cxText(x, n) : fmtFit(x.v, n));
+
 // Просмотр списка (ответ в виде списка)
 function listView(title, arr) {
   pushModal({
@@ -3425,13 +3690,13 @@ function listView(title, arr) {
         if (i >= arr.length) break;
         const y = 48 + r * 24, idx = String(i + 1);
         lcd.text(72 - idx.length * 18, y, idx);
-        const s = fmtFit(arr[i].v, 15);
+        const s = valText(arr[i], 15);
         if (i === this.sel) lcd.rect(90, y, 15 * 18 + 6, 24, HILITE);
         lcd.text(90 + (15 - [...s].length) * 18, y, s, { color: i === this.sel ? '#fff' : '#000' });
       }
       lcd.line(81.5, 48, 81.5, 168, '#000', 1);
       lcd.line(0, 168.5, LW, 168.5, '#000', 1);
-      const s = fmtNum(arr[this.sel].v);
+      const s = valText(arr[this.sel], 20);
       lcd.text(LW - 4 - [...s].length * 18, 169, s);
     }
   });
@@ -3469,14 +3734,14 @@ function matView(title, m) {
         for (let c = 0; c < 3; c++) {
           const j = this.left + c;
           if (j >= m[0].length) break;
-          const s = fmtFit(m[i][j].v, 6), x = 36 + c * 114;
+          const s = valText(m[i][j], 6), x = 36 + c * 114;
           const on = i === this.r && j === this.c;
           if (on) lcd.rect(x, y, 112, 24, HILITE);
           lcd.text(x + 110 - [...s].length * 18, y, s, { color: on ? '#fff' : '#000' });
         }
       }
       lcd.frame(33, 47, LW - 34, 98, '#000', 1);
-      const s = fmtNum(m[this.r][this.c].v);
+      const s = valText(m[this.r][this.c], 20);
       lcd.text(LW - 4 - [...s].length * 18, 169, s);
     }
   });
@@ -3495,7 +3760,8 @@ const OPTN_RUN = [
     mi('Sum', 'Sum '), mi('Prod', 'Prod '), mi('Cuml', 'Cuml '), mi('%', 'Percent '), mi('ΔList', 'ΔList ')]),
   mi('MAT/VCT', [mi('Mat', 'Mat '), mi('Mat→Lst', 'Mat→List('), mi('Det', 'Det '), mi('Trn', 'Trn '), mi('Augment', 'Augment('),
     mi('Identity', 'Identity '), mi('Dim', 'Dim '), mi('Fill(', 'Fill('), mi('Ref', 'Ref '), mi('Rref', 'Rref ')]),
-  mi('COMPLEX', notHere('Complex numbers')),
+  mi('COMPLEX', [mi('i', 'i'), mi('Abs', T('abs', 'Abs ')), mi('Arg', 'Arg '), mi('Conjg', 'Conjg '), null,
+    mi('ReP', 'ReP '), mi('ImP', 'ImP '), mi(CX_POLAR, CX_POLAR), mi(CX_RECT, CX_RECT)]),
   mi('CALC', [mi('Solve', 'Solve('), mi('d/dx', T('ddx', 'd/dx(')), mi('d²/dx²', T('d2dx', 'd²/dx²(')), mi('∫dx', T('int', '∫(')), mi('SolveN', 'SolveN('),
     mi('FMin', 'FMin('), mi('FMax', 'FMax('), mi('Σ(', T('sum', 'Σ(')), mi('logab', T('logab', 'logab(')), mi('Int÷', 'Int÷'),
     mi('Rmdr', 'Rmdr')]),
@@ -3554,9 +3820,10 @@ const runApp = {
 
   // Вычислить строку → запись истории. Ошибки калькулятора пробрасываются
   run1(row, math, show) {
-    const e = { row, math, kind: 'num', val: null, mode: 'auto', frac: null };
+    const e = { row, math, kind: 'num', val: null, mode: 'auto', frac: null, form: null };
+    cxTakeHint();
     const v = evalTokens(rowTokens(row));
-    if (isNum(v)) { e.val = v; mem.ans = v; }
+    if (isNum(v) || isCx(v)) { e.val = v; mem.ans = v; e.form = cxTakeHint(); }   // form — вид ответа по команде ▶r∠θ / ▶a+bi
     else if (isL(v)) { e.kind = 'done'; mem.listAns = v.a; if (show) listView('Ans', v.a); }
     else if (isM(v)) { e.kind = 'done'; mem.matAns = v.m; if (show) matView('Ans', v.m); }
     else e.kind = 'done';
@@ -3584,6 +3851,7 @@ const runApp = {
   toggleSD(shift) {
     const e = this.sel >= 0 ? this.hist[this.sel] : this.hist[this.hist.length - 1];
     if (!e || e.kind !== 'num') return;
+    if (isCx(e.val) || e.form === 'polar') { if (!shift) cxToggleSD(e); return; }
     const form = () => { const sv = S.frac; if (e.frac) S.frac = e.frac; try { return exactForm(e.val, e.math); } finally { S.frac = sv; } };
     if (shift) {
       if (!e.val.ex || !exIsRat(e.val.ex) || exIsInt(e.val.ex)) return;
@@ -3655,7 +3923,7 @@ const runApp = {
   entryRow(e) {
     const sv = S.frac;
     if (e.frac) S.frac = e.frac;
-    try { return numRow(e.val, e.mode, e.math); } finally { S.frac = sv; }
+    try { return valRow(e.val, e.mode, e.math, e.form); } finally { S.frac = sv; }
   },
 
   draw() {
@@ -3710,7 +3978,7 @@ const runApp = {
     lcd.fmenu(this.menu.labels());
   },
 
-  save() { return { hist: this.hist.slice(-30).map((e) => ({ row: e.row, math: e.math, kind: e.kind, val: e.val, mode: e.mode, frac: e.frac, err: e.err })), cur: this.ed ? this.ed.get() : [] }; },
+  save() { return { hist: this.hist.slice(-30).map((e) => ({ row: e.row, math: e.math, kind: e.kind, val: e.val, mode: e.mode, frac: e.frac, form: e.form, err: e.err })), cur: this.ed ? this.ed.get() : [] }; },
   load(st) {
     if (!st) return;
     this.hist = Array.isArray(st.hist) ? st.hist.filter((e) => e && Array.isArray(e.row)) : [];
@@ -3719,6 +3987,68 @@ const runApp = {
   }
 };
 UI.apps.run = runApp;
+
+// ══════ 61-vars.js — меню VARS: величины окна, масштаба, статистики, таблицы ══════
+//
+// Пункт меню вставляет знак (например «Xmin» или «x̄»), а при вычислении знак заменяется
+// текущим значением — см. EXT_VARS в 20-parse.js.
+
+G.STATR = '';                   // r — коэффициент корреляции (не путать с переменной r)
+{
+  const prev = lcd.special;
+  lcd.special = function (ch, cx, cy, h, color) {
+    if (ch === G.STATR) { this.g.font = `600 ${h * 0.96}px ${FONT}`; this.g.fillStyle = color; this.g.textAlign = 'center'; this.g.fillText('r', cx, cy + h * 0.34); return true; }
+    return prev.call(this, ch, cx, cy, h, color);
+  };
+}
+
+// Последние результаты статистики: запоминаются при каждом расчёте 1-VAR, 2-VAR и регрессии
+const statLast = { one: null, two: null, reg: null };
+if (typeof stat1 === 'function' && typeof stat2 === 'function' && typeof statReg === 'function') {
+  const f1 = stat1, f2 = stat2, fr = statReg;
+  stat1 = function (...a) { const r = f1(...a); statLast.one = r; return r; };            // eslint-disable-line no-func-assign
+  stat2 = function (...a) { const r = f2(...a); statLast.two = r; statLast.one = null; return r; };   // eslint-disable-line no-func-assign
+  statReg = function (...a) { const r = fr(...a); statLast.reg = r; return r; };          // eslint-disable-line no-func-assign
+}
+
+{
+  const one = (k) => () => (statLast.one ? statLast.one[k] : undefined);
+  const two = (k) => () => (statLast.two ? statLast.two[k] : undefined);
+  const xk = (k1, k2) => () => (statLast.one ? statLast.one[k1] : statLast.two ? statLast.two[k2] : undefined);
+  const reg = (name) => () => { const row = statLast.reg && statLast.reg.rows.find((q) => q[0] === name); return row ? row[1] : undefined; };
+  const defs = {
+    Xmin: () => VW.xmin, Xmax: () => VW.xmax, Xscl: () => VW.xscl, Xdot: () => xDot(),
+    Ymin: () => VW.ymin, Ymax: () => VW.ymax, Yscl: () => VW.yscl,
+    'Tθmin': () => VW.tmin, 'Tθmax': () => VW.tmax, 'Tθptch': () => VW.tptch,
+    Xfct: () => ZOOM_FACT.x, Yfct: () => ZOOM_FACT.y,
+    n: xk('n', 'n'), [G.XBAR]: xk('mean', 'meanX'), 'Σx': xk('sum', 'sumX'), 'Σx²': xk('sum2', 'sumX2'),
+    'σx': xk('sdP', 'sdPX'), sx: xk('sdS', 'sdSX'), minX: xk('min', 'minX'), maxX: xk('max', 'maxX'),
+    [G.YBAR]: two('meanY'), 'Σy': two('sumY'), 'Σy²': two('sumY2'), 'Σxy': two('sumXY'),
+    'σy': two('sdPY'), sy: two('sdSY'), minY: two('minY'), maxY: two('maxY'),
+    a: reg('a'), b: reg('b'), c: reg('c'), d: reg('d'), e: reg('e'), [G.STATR]: reg('r'), [G.STATR + '²']: reg('r²'), MSe: reg('MSe'),
+    Q1: one('q1'), Med: one('med'), Q3: one('q3'), Mod: one('mode'),
+    'F Start': () => TBL.start, 'F End': () => TBL.end, 'F pitch': () => TBL.step
+  };
+  for (const k in defs) EXT_VARS.set(k, defs[k]);
+
+  const ins = (...names) => names.map((t) => mi(t, t));
+  VARS_RUN.splice(0, VARS_RUN.length,
+    mi('V-WIN', [
+      mi('X', [mi('min', 'Xmin'), mi('max', 'Xmax'), mi('scale', 'Xscl'), mi('dot', 'Xdot')]),
+      mi('Y', [mi('min', 'Ymin'), mi('max', 'Ymax'), mi('scale', 'Yscl')]),
+      mi('T,θ', [mi('min', 'Tθmin'), mi('max', 'Tθmax'), mi('ptch', 'Tθptch')])
+    ]),
+    mi('FACTOR', ins('Xfct', 'Yfct')),
+    mi('STAT', [
+      mi('X', ins('n', G.XBAR, 'Σx', 'Σx²', 'σx', 'sx', 'minX', 'maxX')),
+      mi('Y', ins(G.YBAR, 'Σy', 'Σy²', 'Σxy', 'σy', 'sy', 'minY', 'maxY')),
+      mi('GRAPH', ins('a', 'b', 'c', 'd', 'e', G.STATR, G.STATR + '²', 'MSe', 'Q1', 'Med', 'Q3', 'Mod'))
+    ]),
+    mi('GRAPH', [mi('Y', G.YV)]),
+    null,
+    mi('TABLE', [mi('Start', 'F Start'), mi('End', 'F End'), mi('pitch', 'F pitch')])
+  );
+}
 
 // ══════ 62-mat.js — редактор матриц (Run-Matrix → ▶MAT/VCT) и каталог команд (SHIFT 4) ══════
 
@@ -7883,12 +8213,20 @@ function eqnRatNear(x, maxDen) {
 }
 
 // ---------- корни многочленов ----------
-// Квадратное уравнение ax² + bx + c = 0: [] либо два корня — сначала (−b+√D)/2a, потом (−b−√D)/2a
-function eqnQuad(a, b, c) {
+// Комплексные корни при D < 0: −b/2a ± i·√(−D)/2a — сначала корень с положительной мнимой частью
+function eqnQuadCx(a, b, D) {
+  const twoA = sMul(RI(2), a), re = sDiv(sNeg(b), twoA);
+  let im = sDiv(sSqrt(sNeg(D)), twoA);
+  if (im.v < 0) im = sNeg(im);
+  return [CX(re, im), CX(re, sNeg(im))];
+}
+// Квадратное уравнение ax² + bx + c = 0: [] либо два корня — сначала (−b+√D)/2a, потом (−b−√D)/2a.
+// cplx — показывать и комплексные корни (Complex Mode не Real)
+function eqnQuad(a, b, c, cplx) {
   const D = sSub(sMul(b, b), sMul(RI(4), sMul(a, c)));
   // у приближённых коэффициентов «почти нулевой» дискриминант считаем нулём
   const tiny = !D.ex && Math.abs(D.v) <= 1e-12 * (b.v * b.v + Math.abs(4 * a.v * c.v));
-  if (D.v < 0 && !tiny) return [];
+  if (D.v < 0 && !tiny) return cplx ? eqnQuadCx(a, b, D) : [];
   const twoA = sMul(RI(2), a);
   if (D.v === 0 || tiny) { const x = sDiv(sNeg(b), twoA); return [x, x]; }
   const sq = sSqrt(D);
@@ -7901,8 +8239,13 @@ function eqnQuad(a, b, c) {
   const fix = (x, v) => (x.ex && exIsRat(x.ex) ? x : R(v, x.ex, x.dec));
   return [fix(sDiv(sAdd(sNeg(b), sq), twoA), vp), fix(sDiv(sSub(sNeg(b), sq), twoA), vm)];
 }
-// Вещественные корни многочлена без кратных корней (целые коэффициенты): рациональные — точно
-function eqnSqfRoots(F) {
+// Комплексный корень, найденный численно: «шум» в частях убирается
+function eqnCx(re, im) {
+  const sc = Math.hypot(re, im);
+  return CX(RF(snapNice(re, sc), false, false), RF(snapNice(im, sc), false, false));
+}
+// Корни многочлена без кратных корней (целые коэффициенты): рациональные — точно; комплексные — только при cplx
+function eqnSqfRoots(F, cplx) {
   const roots = [];
   let p = F;
   if (p[p.length - 1] === 0n) { roots.push(RI(0)); p = p.slice(0, -1); }
@@ -7924,36 +8267,38 @@ function eqnSqfRoots(F) {
   }
   const n = p.length - 1;
   if (n === 1) roots.push(eqnBigRat(-p[1], p[0]));
-  else if (n === 2) roots.push(...eqnQuad(eqnBigNum(p[0]), eqnBigNum(p[1]), eqnBigNum(p[2])));
+  else if (n === 2) roots.push(...eqnQuad(eqnBigNum(p[0]), eqnBigNum(p[1]), eqnBigNum(p[2]), cplx));
   else if (n >= 3) {
     const c = zpFloat(p);
     for (const [re, im] of zs || eqnAberth(c)) {
       if (Math.abs(im) <= 1e-9 * Math.max(1, Math.abs(re))) roots.push(RF(snapNice(eqnPolish(c, re)), false, false));
+      else if (cplx) roots.push(eqnCx(re, im));
     }
   }
   return roots;
 }
 // Приближённые коэффициенты: все корни численно, вещественные — с малой мнимой частью
-function eqnFloatRoots(c) {
-  const out = [];
+function eqnFloatRoots(c, cplx) {
+  const out = [], cxs = [];
   c = c.slice();
   while (c.length > 1 && c[c.length - 1] === 0) { out.push(0); c.pop(); }
   if (c.length === 2) out.push(-c[1] / c[0]);
   else if (c.length > 2) {
     for (const [re, im] of eqnAberth(c)) {
       if (Math.abs(im) <= 1e-6 * Math.max(1, Math.abs(re))) out.push(snapNice(eqnPolish(c, re)));
+      else if (cplx) cxs.push(eqnCx(re, im));
     }
   }
-  return out.map((v) => RF(v, false, false));
+  return [...out.map((v) => RF(v, false, false)), ...cxs];
 }
-// Вещественные корни многочлена. coefs — числа, старший коэффициент первый.
+// Корни многочлена: вещественные, а при cplx — и комплексные. coefs — числа, старший коэффициент первый.
 // Кратный корень повторяется столько раз, какова его кратность
-function eqnPoly(coefs) {
+function eqnPoly(coefs, cplx) {
   if (coefs[0].v === 0) fail('Ma ERROR');
   const deg = coefs.length - 1, dec = coefs.some((x) => x.dec);
   let roots = null;
   if (deg === 1) roots = [sDiv(sNeg(coefs[1]), coefs[0])];
-  else if (deg === 2) roots = eqnQuad(coefs[0], coefs[1], coefs[2]);
+  else if (deg === 2) roots = eqnQuad(coefs[0], coefs[1], coefs[2], cplx);
   else {
     const big = zpFrom(coefs);
     if (big) {
@@ -7961,17 +8306,19 @@ function eqnPoly(coefs) {
         roots = [];
         zpSqFree(big).forEach((F, k) => {
           if (F.length < 2) return;
-          for (const r of eqnSqfRoots(F)) for (let i = 0; i <= k; i++) roots.push(r);
+          for (const r of eqnSqfRoots(F, cplx)) for (let i = 0; i <= k; i++) roots.push(r);
         });
       } catch (e) {
         if (e instanceof CalcError) throw e;
         roots = null;                  // точный путь не удался — считаем численно
       }
     }
-    if (!roots) roots = eqnFloatRoots(coefs.map((x) => x.v));
-    roots.sort((p, q) => q.v - p.v);
+    if (!roots) roots = eqnFloatRoots(coefs.map((x) => x.v), cplx);
+    // по убыванию вещественной части; в сопряжённой паре сначала корень с положительной мнимой частью
+    roots.sort((p, q) => q.v - p.v || (q.im ? q.im.v : 0) - (p.im ? p.im.v : 0));
   }
-  return roots.map((x) => R(x.v, x.ex, dec || x.dec));
+  const mark = (x) => R(x.v, x.ex, dec || x.dec);
+  return roots.map((x) => (isCx(x) ? CX(mark(x.re), mark(x.im)) : mark(x)));
 }
 
 // ---------- Solver ----------
@@ -8058,7 +8405,7 @@ const eqnApp = {
   menu: null,
 
   enter() { this.go('home'); },
-  setup() { return ['io', 'frac', 'angle', 'disp']; },
+  setup() { return ['io', 'frac', 'angle', 'cplx', 'disp']; },
   onSetup() { if (this.st === 'solEq' && this.ed.math !== (S.io === 'Math')) this.editEq(true); },
 
   go(st) {
@@ -8138,7 +8485,7 @@ const eqnApp = {
   solve() {
     const g = this.grid();
     if (g.poly) {
-      const roots = eqnPoly(g.data[0]);
+      const roots = eqnPoly(g.data[0], S.cplx !== 'Real');
       if (!roots.length) { infoBox(['No Real Roots', '', 'Press:[EXIT]']); return; }
       this.res = { labels: roots.map((_, i) => 'X' + (i + 1)), vals: roots, sel: 0, off: 0, mode: 'auto' };
       this.go('polR');
@@ -8181,9 +8528,9 @@ const eqnApp = {
     else if (k.id === 'SD' && !k.shift) {
       // S⇔D: все значения разом — точная запись ↔ десятичная
       const math = S.io === 'Math';
-      const exact = (x) => r.mode !== 'dec' && (r.mode === 'exact' || !x.dec) && !!exactForm(x, math);
+      const exact = (x) => r.mode !== 'dec' && (r.mode === 'exact' || !x.dec) && valExact(x, math);
       if (r.vals.some(exact)) r.mode = 'dec';
-      else if (r.vals.some((x) => !!exactForm(x, math))) r.mode = 'exact';
+      else if (r.vals.some((x) => valExact(x, math))) r.mode = 'exact';
       r.off = 0;
     }
   },
@@ -8331,7 +8678,7 @@ const eqnApp = {
     eqnHeader(this.headParts(this.grid()), 24);
     let y = 0;
     const rows = r.vals.map((x) => {
-      const row = numRow(x, r.mode, math), lay = layRow(row, 0, math, false);
+      const row = valRow(x, r.mode, math), lay = layRow(row, 0, math, false);
       const a = Math.max(12, lay.a), q = { row, lay, a, h: Math.ceil(a + Math.max(12, lay.d)), y };
       y += q.h;
       return q;
@@ -9078,10 +9425,12 @@ function saveState() {
 function loadState() {
   const st = store.get('state', null);
   if (!st || st.v !== 1) return null;
-  const okNum = (x) => x && typeof x.v === 'number' && Number.isFinite(x.v);
+  const okNum = (x) => x && typeof x.v === 'number' && Number.isFinite(x.v) && !x.cx;
+  // переменные и Ans могут быть комплексными: {cx, re, im} с двумя обычными числами
+  const okVal = (x) => okNum(x) || (!!x && x.cx === true && okNum(x.re) && okNum(x.im));
   for (const k in S) if (st.S && typeof st.S[k] === typeof S[k]) S[k] = st.S[k];
-  for (const n of VARS) if (st.vars && okNum(st.vars[n])) setVar(n, st.vars[n]);
-  if (okNum(st.ans)) mem.ans = st.ans;
+  for (const n of VARS) if (st.vars && okVal(st.vars[n])) setVar(n, st.vars[n]);
+  if (okVal(st.ans)) mem.ans = st.ans;
   if (Array.isArray(st.lists)) mem.lists = st.lists.map((l) => (Array.isArray(l) ? l.filter(okNum) : []));
   if (Array.isArray(st.listSub)) mem.listSub = st.listSub.map((s) => (typeof s === 'string' ? s : ''));
   if (st.mats && typeof st.mats === 'object') {

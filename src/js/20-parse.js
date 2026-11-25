@@ -41,6 +41,8 @@ const FNA = new Map([
   ['BinomialPD(', 'binpd'], ['BinomialCD(', 'bincd'], ['PoissonPD(', 'poipd'], ['PoissonCD(', 'poicd']
 ]);
 const RELS = new Set(['=', '≠', '>', '<', '≥', '≤']);
+// Величины из меню VARS (Xmin, x̄, Strt…): знак → функция, дающая текущее значение. Заполняется в 61-vars.js
+const EXT_VARS = new Map();
 const CX_POLAR = '▶r∠θ', CX_RECT = '▶a+bi';   // команды в конце выражения: показать ответ как r∠θ или как a+bi
 let cxHint = null;                            // какой вид ответа запрошен в последнем расчёте ('polar' | 'rect')
 const cxTakeHint = () => { const h = cxHint; cxHint = null; return h; };   // забрать запрос и сбросить его
@@ -69,6 +71,10 @@ function lex(toks) {
         exp = sg * Number(es);
       }
       out.push({ n: numFromLiteral(mant, exp), pos: start });
+    } else if (EXT_VARS.has(t)) {
+      const v = Number(EXT_VARS.get(t)()) || 0;
+      out.push({ n: R(v, Number.isInteger(v) && Math.abs(v) < 1e15 ? exInt(v) : null, false), pos: i });
+      i++;
     } else { out.push({ t, pos: i }); i++; }
   }
   return out;
@@ -897,7 +903,8 @@ function compileAst(n) {
 const evalTokens = (toks) => evalAst(parse(toks));
 function compileTokens(toks, name) {     // → (x) => число; переменная по умолчанию X
   const f = compileAst(parse(toks)), ix = VIX[name || 'X'];
-  return (x) => { fv[ix] = x; return f(); };
+  // значение переменной после счёта возвращается: иначе fv расходится с mem.vars (X в Solver после таблицы)
+  return (x) => { const sv = fv[ix]; fv[ix] = x; const y = f(); fv[ix] = sv; return y; };
 }
 // Значение числового поля (V-Window, таблицы, списки): выражение → число
 function evalNumber(toks) {

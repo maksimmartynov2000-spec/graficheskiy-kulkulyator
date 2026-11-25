@@ -210,6 +210,13 @@ const { open } = require('./web');
   await K('7 7 DEL DEL ALPHA DEL EXE');
   near(await ans(), 7, 'UNDO возвращает удалённый знак');
 
+  // ---------- меню VARS: величины окна и статистики ----------
+  await K('MENU 2 1 EXE 2 EXE 3 EXE 4 EXE 9 EXE F2 F1 EXIT EXIT MENU 1 AC VARS F3 F1 F2 EXE');
+  near(await ans(), 3.8, 'VARS → STAT → x̄ после 1-VAR');
+  await K('EXIT EXIT EXIT VARS F1 F1 F2 SUB F1 EXE');
+  near(await ans(), 12.6, 'VARS → V-WIN: Xmax − Xmin');
+  await K('EXIT EXIT EXIT');
+
   // ---------- Memory ----------
   await K('MENU TAN');
   await has('Main Memory', 'режим Memory открывается');
