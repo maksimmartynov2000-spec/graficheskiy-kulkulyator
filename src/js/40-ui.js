@@ -43,6 +43,8 @@ function typeKey(ed, k, xvar) {
   }
   if (k.shift) {
     switch (k.id) {
+      case '0': ed.ins('i'); return true;       // мнимая единица
+      case 'XTT': ed.ins('∠'); return true;     // полярная запись r∠θ
       case 'SQR': if (m) ed.tpl('sqrt'); else ed.ins('√'); return true;
       case 'POW': if (m) ed.tpl('root'); else ed.ins(G.XRT); return true;
       case 'LOG': if (m) ed.tpl('pow10'); else ed.ins(G.TEN); return true;
@@ -214,7 +216,7 @@ function statusBar(tags) {
   lcd.status(tags, UI.shift ? 'S' : UI.alock ? 'AL' : UI.alpha ? 'A' : null);
 }
 const dispTag = () => (S.disp === 'Norm' ? 'Norm' + S.dispN : S.disp + S.dispN);
-const stdTags = () => [S.io, S.angle, dispTag(), S.frac, 'Real'];
+const stdTags = () => [S.io, S.angle, dispTag(), S.frac, S.cplx];
 
 // ---------- редактор на экране ----------
 // Нарисовать редактор в окне (x, y — левый край и средняя линия). Возвращает раскладку

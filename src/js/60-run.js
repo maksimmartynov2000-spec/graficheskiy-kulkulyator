@@ -15,6 +15,8 @@ function fmtFit(v, n) {
   return s;
 }
 
+const valText = (x, n) => (isCx(x) ? cxText(x, n) : fmtFit(x.v, n));
+
 // Просмотр списка (ответ в виде списка)
 function listView(title, arr) {
   pushModal({
@@ -36,13 +38,13 @@ function listView(title, arr) {
         if (i >= arr.length) break;
         const y = 48 + r * 24, idx = String(i + 1);
         lcd.text(72 - idx.length * 18, y, idx);
-        const s = fmtFit(arr[i].v, 15);
+        const s = valText(arr[i], 15);
         if (i === this.sel) lcd.rect(90, y, 15 * 18 + 6, 24, HILITE);
         lcd.text(90 + (15 - [...s].length) * 18, y, s, { color: i === this.sel ? '#fff' : '#000' });
       }
       lcd.line(81.5, 48, 81.5, 168, '#000', 1);
       lcd.line(0, 168.5, LW, 168.5, '#000', 1);
-      const s = fmtNum(arr[this.sel].v);
+      const s = valText(arr[this.sel], 20);
       lcd.text(LW - 4 - [...s].length * 18, 169, s);
     }
   });
@@ -80,14 +82,14 @@ function matView(title, m) {
         for (let c = 0; c < 3; c++) {
           const j = this.left + c;
           if (j >= m[0].length) break;
-          const s = fmtFit(m[i][j].v, 6), x = 36 + c * 114;
+          const s = valText(m[i][j], 6), x = 36 + c * 114;
           const on = i === this.r && j === this.c;
           if (on) lcd.rect(x, y, 112, 24, HILITE);
           lcd.text(x + 110 - [...s].length * 18, y, s, { color: on ? '#fff' : '#000' });
         }
       }
       lcd.frame(33, 47, LW - 34, 98, '#000', 1);
-      const s = fmtNum(m[this.r][this.c].v);
+      const s = valText(m[this.r][this.c], 20);
       lcd.text(LW - 4 - [...s].length * 18, 169, s);
     }
   });
@@ -106,7 +108,8 @@ const OPTN_RUN = [
     mi('Sum', 'Sum '), mi('Prod', 'Prod '), mi('Cuml', 'Cuml '), mi('%', 'Percent '), mi('ΔList', 'ΔList ')]),
   mi('MAT/VCT', [mi('Mat', 'Mat '), mi('Mat→Lst', 'Mat→List('), mi('Det', 'Det '), mi('Trn', 'Trn '), mi('Augment', 'Augment('),
     mi('Identity', 'Identity '), mi('Dim', 'Dim '), mi('Fill(', 'Fill('), mi('Ref', 'Ref '), mi('Rref', 'Rref ')]),
-  mi('COMPLEX', notHere('Complex numbers')),
+  mi('COMPLEX', [mi('i', 'i'), mi('Abs', T('abs', 'Abs ')), mi('Arg', 'Arg '), mi('Conjg', 'Conjg '), null,
+    mi('ReP', 'ReP '), mi('ImP', 'ImP '), mi(CX_POLAR, CX_POLAR), mi(CX_RECT, CX_RECT)]),
   mi('CALC', [mi('Solve', 'Solve('), mi('d/dx', T('ddx', 'd/dx(')), mi('d²/dx²', T('d2dx', 'd²/dx²(')), mi('∫dx', T('int', '∫(')), mi('SolveN', 'SolveN('),
     mi('FMin', 'FMin('), mi('FMax', 'FMax('), mi('Σ(', T('sum', 'Σ(')), mi('logab', T('logab', 'logab(')), mi('Int÷', 'Int÷'),
     mi('Rmdr', 'Rmdr')]),
@@ -165,9 +168,10 @@ const runApp = {
 
   // Вычислить строку → запись истории. Ошибки калькулятора пробрасываются
   run1(row, math, show) {
-    const e = { row, math, kind: 'num', val: null, mode: 'auto', frac: null };
+    const e = { row, math, kind: 'num', val: null, mode: 'auto', frac: null, form: null };
+    cxTakeHint();
     const v = evalTokens(rowTokens(row));
-    if (isNum(v)) { e.val = v; mem.ans = v; }
+    if (isNum(v) || isCx(v)) { e.val = v; mem.ans = v; e.form = cxTakeHint(); }   // form — вид ответа по команде ▶r∠θ / ▶a+bi
     else if (isL(v)) { e.kind = 'done'; mem.listAns = v.a; if (show) listView('Ans', v.a); }
     else if (isM(v)) { e.kind = 'done'; mem.matAns = v.m; if (show) matView('Ans', v.m); }
     else e.kind = 'done';
@@ -195,6 +199,7 @@ const runApp = {
   toggleSD(shift) {
     const e = this.sel >= 0 ? this.hist[this.sel] : this.hist[this.hist.length - 1];
     if (!e || e.kind !== 'num') return;
+    if (isCx(e.val) || e.form === 'polar') { if (!shift) cxToggleSD(e); return; }
     const form = () => { const sv = S.frac; if (e.frac) S.frac = e.frac; try { return exactForm(e.val, e.math); } finally { S.frac = sv; } };
     if (shift) {
       if (!e.val.ex || !exIsRat(e.val.ex) || exIsInt(e.val.ex)) return;
@@ -266,7 +271,7 @@ const runApp = {
   entryRow(e) {
     const sv = S.frac;
     if (e.frac) S.frac = e.frac;
-    try { return numRow(e.val, e.mode, e.math); } finally { S.frac = sv; }
+    try { return valRow(e.val, e.mode, e.math, e.form); } finally { S.frac = sv; }
   },
 
   draw() {
@@ -321,7 +326,7 @@ const runApp = {
     lcd.fmenu(this.menu.labels());
   },
 
-  save() { return { hist: this.hist.slice(-30).map((e) => ({ row: e.row, math: e.math, kind: e.kind, val: e.val, mode: e.mode, frac: e.frac, err: e.err })), cur: this.ed ? this.ed.get() : [] }; },
+  save() { return { hist: this.hist.slice(-30).map((e) => ({ row: e.row, math: e.math, kind: e.kind, val: e.val, mode: e.mode, frac: e.frac, form: e.form, err: e.err })), cur: this.ed ? this.ed.get() : [] }; },
   load(st) {
     if (!st) return;
     this.hist = Array.isArray(st.hist) ? st.hist.filter((e) => e && Array.isArray(e.row)) : [];
