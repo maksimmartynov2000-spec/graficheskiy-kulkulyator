@@ -4,7 +4,22 @@ const SETUP_GRAPH = ['io', 'drawType', 'graphFunc', 'deriv', 'angle', 'coord', '
 
 // ---------- экран View Window ----------
 const VW_ROWS = [['Xmin', 'xmin'], [' max', 'xmax'], [' scale', 'xscl'], [' dot', 'dot'], ['Ymin', 'ymin'], [' max', 'ymax'], [' scale', 'yscl'], ['T' + 'θ min', 'tmin'], ['   max', 'tmax'], ['   ptch', 'tptch']];
+const VW_MEM = [null, null, null, null, null, null];   // V-MEM: шесть сохранённых окон
 function openVWindow(onClose) {
+  const slots = (fn) => VW_MEM.map((_, n) => mi('V-Win' + (n + 1), () => fn(n)));
+  const menu = new FMenu([
+    mi('INITIAL', () => vwSet('INITIAL')),
+    mi('TRIG', () => vwSet('TRIG')),
+    mi('STANDRD', () => vwSet('STANDRD')),
+    mi('V-MEM', [
+      mi('STORE', slots((n) => { VW_MEM[n] = { ...VW }; menu.reset(); })),
+      mi('RECALL', slots((n) => { if (!VW_MEM[n]) { errorBox('Memory ERROR'); return; } Object.assign(VW, VW_MEM[n]); menu.reset(); }))
+    ]),
+    mi('SQUARE', [
+      mi('Y-BASE', () => { const c = (VW.xmin + VW.xmax) / 2, h = yDot() * GA.w / 2; VW.xmin = r15(c - h); VW.xmax = r15(c + h); menu.reset(); }),
+      mi('X-BASE', () => { const c = (VW.ymin + VW.ymax) / 2, h = xDot() * GA.h / 2; VW.ymin = r15(c - h); VW.ymax = r15(c + h); menu.reset(); })
+    ])
+  ]);
   pushModal({
     sel: 0, top: 0, field: null,
     get(key) { return key === 'dot' ? xDot() : VW[key]; },
@@ -23,12 +38,10 @@ function openVWindow(onClose) {
         return;
       }
       const f = fIndex(k);
-      if (f === 0) { vwSet('INITIAL'); return; }
-      if (f === 1) { vwSet('TRIG'); return; }
-      if (f === 2) { vwSet('STANDRD'); return; }
+      if (f >= 0) { const it = menu.press(f); if (it && it.fn) it.fn(); return; }
       if (k.id === 'UP') this.move(-1);
       else if (k.id === 'DOWN' || k.id === 'EXE') this.move(1);
-      else if (k.id === 'EXIT') { popModal(); if (onClose) onClose(); }
+      else if (k.id === 'EXIT') { if (!menu.back()) { popModal(); if (onClose) onClose(); } }
       else if (startsNumber(k)) { this.field = new NumField(); this.field.key(k); }
     },
     draw() {
@@ -49,7 +62,7 @@ function openVWindow(onClose) {
       }
       if (this.top > 0) lcd.glyph('▲', LW - 9, 58, 12, '#000');
       if (this.top + 6 < VW_ROWS.length) lcd.glyph('▼', LW - 9, 184, 12, '#000');
-      lcd.fmenu([{ l: 'INITIAL', k: 'cmd' }, { l: 'TRIG', k: 'cmd' }, { l: 'STANDRD', k: 'cmd' }]);
+      lcd.fmenu(menu.labels());
     }
   });
 }
@@ -101,7 +114,7 @@ const graphApp = {
           mi('TYPE', [...FN_TYPES.slice(0, 4).map((t) => mi(t, () => { S.funcType = t; l.base.reset(); })), null,
             ...FN_TYPES.slice(4).map((t) => mi(t, () => { S.funcType = t; l.base.reset(); }))]),
           mi('TOOL', [{ l: 'STYLE', get sub() { return l.styleMenu(); } }, { l: 'COLOR', get sub() { return l.colorMenu(); } }]),
-          null,
+          mi('MODIFY', () => this.modify()),
           mi('DRAW', () => this.show())
         ]
       });
@@ -173,12 +186,7 @@ const graphApp = {
 
   // ---------- окно просмотра ----------
   keep() { this.g.prev = { ...VW }; },
-  pan(dx, dy) {
-    const sx = dx * xDot(), sy = dy * yDot();
-    VW.xmin = r15(VW.xmin + sx); VW.xmax = r15(VW.xmax + sx);
-    VW.ymin = r15(VW.ymin + sy); VW.ymax = r15(VW.ymax + sy);
-    plotVer++;
-  },
+  pan(dx, dy) { vwPan(dx, dy); plotVer++; },
   zoom(fx, fy, cx, cy) {
     this.keep();
     const s = this.g;
@@ -187,8 +195,7 @@ const graphApp = {
       cx = p ? p.x : (VW.xmin + VW.xmax) / 2;
       cy = p && Number.isFinite(p.y) ? p.y : (VW.ymin + VW.ymax) / 2;
     }
-    const hw = (VW.xmax - VW.xmin) / 2 / fx, hh = (VW.ymax - VW.ymin) / 2 / fy;
-    Object.assign(VW, { xmin: r15(cx - hw), xmax: r15(cx + hw), ymin: r15(cy - hh), ymax: r15(cy + hh) });
+    vwZoom(fx, fy, cx, cy);
     plotVer++;
   },
   zoomMenu() {
@@ -304,7 +311,25 @@ const graphApp = {
           this.follow();
           return true;
         }
+        if (k.id === 'EXE') {           // отметить точку: координаты остаются на графике
+          const p = this.point(s.tr);
+          if (Number.isFinite(p.x) && Number.isFinite(p.y)) s.sketch.push({ t: 'mark', x: p.x, y: p.y });
+          return true;
+        }
         return false;
+      case 'modify': {
+        const m = s.mod, onStep = m.i === m.vars.length;
+        const cur = () => (onStep ? m.step : (mem.vars[m.vars[m.i]] || RI(0)).v);
+        const put = (v) => { if (onStep) { if (v > 0) m.step = v; } else { setVar(m.vars[m.i], R(r15(v), null, true)); plotVer++; } };
+        if (k.id === 'UP') m.i = (m.i + m.vars.length) % (m.vars.length + 1);
+        else if (k.id === 'DOWN') m.i = (m.i + 1) % (m.vars.length + 1);
+        else if (k.id === 'LEFT') put(onStep ? m.step / 10 : cur() - m.step);
+        else if (k.id === 'RIGHT') put(onStep ? m.step * 10 : cur() + m.step);
+        else if (startsNumber(k)) this.askNumber((onStep ? 'Step' : m.vars[m.i]) + '=', k, put);
+        else if (k.id === 'EXIT' || k.id === 'AC') this.mode = 'list';
+        else return false;
+        return true;
+      }
       case 'pick': {
         const p = s.pick;
         if (k.id === 'UP') p.i = (p.i + p.c.length - 1) % p.c.length;
@@ -333,7 +358,7 @@ const graphApp = {
           return true;
         }
         return false;
-      case 'box1': case 'box2': case 'vline': case 'hline': {
+      case 'box1': case 'box2': case 'vline': case 'hline': case 'plot': case 'line1': case 'line2': case 'circ1': case 'circ2': {
         const d = { LEFT: [-1, 0], RIGHT: [1, 0], UP: [0, -1], DOWN: [0, 1] }[k.id];
         if (d) {
           const now = Date.now();
@@ -354,13 +379,32 @@ const graphApp = {
               plotVer++;
             }
             this.toView();
-          } else { s.sketch.push(s.st === 'vline' ? { t: 'v', x: r15(x) } : { t: 'h', y: r15(y) }); this.toView(); }
+          } else if (s.st === 'plot') s.sketch.push({ t: 'pt', x: r15(x), y: r15(y) });
+          else if (s.st === 'line1' || s.st === 'circ1') { s.box = { x, y }; s.st = s.st === 'line1' ? 'line2' : 'circ2'; }
+          else if (s.st === 'line2') { s.sketch.push({ t: 'seg', x1: r15(s.box.x), y1: r15(s.box.y), x2: r15(x), y2: r15(y) }); this.toView(); }
+          else if (s.st === 'circ2') { s.sketch.push({ t: 'circ', x: r15(s.box.x), y: r15(s.box.y), r: Math.hypot(x - s.box.x, y - s.box.y) }); this.toView(); }
+          else { s.sketch.push(s.st === 'vline' ? { t: 'v', x: r15(x) } : { t: 'h', y: r15(y) }); this.toView(); }
           return true;
         }
         return false;
       }
       default: return false;
     }
+  },
+
+  // ---------- MODIFY: менять коэффициенты и смотреть, как меняется график ----------
+  modify() {
+    this.show();
+    const s = this.g, names = new Set();
+    const walk = (n) => {
+      if (!n || typeof n !== 'object') return;
+      if (n.k === 'var' && !['X', 'Y', 'T', 'θ'].includes(n.n)) names.add(n.n);
+      for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach((q) => (Array.isArray(q) ? q.forEach(walk) : walk(q))); else if (v && typeof v === 'object' && key !== 'v') walk(v); }
+    };
+    for (const i of s.fns) { const fn = mem.fn[i]; walk(parse(rowTokens(fn.row))); if (fn.type === 'Param') walk(parse(rowTokens(fn.row2))); }
+    if (!names.size) { this.mode = 'list'; fail('No Variable'); }
+    s.st = 'modify';
+    s.mod = { vars: [...names].sort(), i: 0, step: 1 };
   },
 
   // ---------- G-Solv ----------
@@ -443,7 +487,9 @@ const graphApp = {
       mi('Norm', () => this.pickFn(this.yFns(), (i) => { this.startTrace('normal'); s.tr = this.newTr(s.fns.indexOf(i)); })),
       mi('Inverse', () => this.pickFn(this.yFns(), (i) => { s.sketch.push({ t: 'inv', i }); s.menu = null; })),
       null,
-      null, null, null,
+      mi('PLOT', () => { s.menu = null; s.st = 'plot'; s.ptr = { px: 192, py: 120 }; }),
+      mi('LINE', () => { s.menu = null; s.st = 'line1'; s.ptr = { px: 192, py: 120 }; }),
+      mi('Circle', () => { s.menu = null; s.st = 'circ1'; s.ptr = { px: 192, py: 120 }; }),
       mi('Vertical', () => { s.menu = null; s.st = 'vline'; s.ptr = { px: 192, py: 120 }; }),
       mi('Horz', () => { s.menu = null; s.st = 'hline'; s.ptr = { px: 192, py: 120 }; })
     ];
@@ -497,28 +543,11 @@ const graphApp = {
     g.restore();
     strokePts(pts, color, rel === '>' || rel === '<' ? 'Broken' : fn.style);
   },
-  pointer(px, py, color) {
-    const g = lcd.g;
-    UI.sawCursor = true;
-    if (!UI.blink) return;
-    g.lineCap = 'butt';
-    for (const [c, w] of [['#fff', 4], [color || '#000', 1.6]]) {
-      g.strokeStyle = c; g.lineWidth = w;
-      g.beginPath(); g.moveTo(px - 8, py); g.lineTo(px + 8, py); g.moveTo(px, py - 8); g.lineTo(px, py + 8); g.stroke();
-      g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.stroke();
-    }
-  },
+  pointer(px, py, color) { drawPointer(px, py, color); },
   // Подпись внизу: «X=…» слева, «Y=…» справа; строка выше — для пометок
   coords(a, b, upper) {
-    const y = LH - 17 - (this.g.menu ? 24 : 0);
-    if (upper) {
-      const w = lcd.miniW(upper, { px: 14 });
-      lcd.rect(1, y - 17, w + 6, 17, '#fff');
-      lcd.mini(4, y - 16, upper, { px: 14 });
-    }
-    if (S.coord === 'Off' && !this.g.input) return;
-    if (a) { const w = lcd.miniW(a, { px: 14 }); lcd.rect(1, y, w + 6, 17, '#fff'); lcd.mini(4, y + 1, a, { px: 14 }); }
-    if (b) { const w = lcd.miniW(b, { px: 14 }); lcd.rect(193, y, w + 6, 17, '#fff'); lcd.mini(196, y + 1, b, { px: 14 }); }
+    const off = S.coord === 'Off' && !this.g.input;
+    drawCoords(off ? null : a, off ? null : b, upper, !!this.g.menu);
   },
   caption(k, hilite) {
     if (S.graphFunc === 'Off' && !hilite) return;
@@ -559,6 +588,9 @@ const graphApp = {
       if (sk.t === 'line') { g.moveTo(0, clampP(Y2P(sk.m * P2X(0) + sk.b))); g.lineTo(LW, clampP(Y2P(sk.m * P2X(LW) + sk.b))); }
       else if (sk.t === 'v') { g.moveTo(X2P(sk.x), GA.top); g.lineTo(X2P(sk.x), GA.bottom); }
       else if (sk.t === 'h') { g.moveTo(0, Y2P(sk.y)); g.lineTo(LW, Y2P(sk.y)); }
+      else if (sk.t === 'seg') { g.moveTo(clampP(X2P(sk.x1)), clampP(Y2P(sk.y1))); g.lineTo(clampP(X2P(sk.x2)), clampP(Y2P(sk.y2))); }
+      else if (sk.t === 'circ') { g.ellipse(X2P(sk.x), Y2P(sk.y), Math.min(4000, sk.r / xDot()), Math.min(4000, sk.r / yDot()), 0, 0, Math.PI * 2); }
+      else if (sk.t === 'pt' || sk.t === 'mark') { g.fillStyle = '#000'; g.fillRect(X2P(sk.x) - 1.5, Y2P(sk.y) - 1.5, 3, 3); }
       else if (sk.t === 'inv' && mem.fn[sk.i] && fnDefined(mem.fn[sk.i])) {
         g.strokeStyle = COLORS[mem.fn[sk.i].color]; g.setLineDash([4, 3]);
         const fq = fnGet(sk.i).f;
@@ -574,6 +606,13 @@ const graphApp = {
       g.stroke();
       g.setLineDash([]);
     }
+    for (const sk of s.sketch) {
+      if (sk.t !== 'mark') continue;
+      const t = '(' + fmtFit(sk.x, 7) + ', ' + fmtFit(sk.y, 7) + ')', w = lcd.miniW(t, { px: 11 });
+      const tx = Math.max(2, Math.min(LW - w - 2, X2P(sk.x) + 5)), ty = Math.max(GA.top + 1, Y2P(sk.y) - 15);
+      lcd.rect(tx - 1, ty, w + 2, 13, '#fff');
+      lcd.mini(tx, ty, t, { px: 11 });
+    }
     lcd.unclip();
 
     // состояние
@@ -588,6 +627,17 @@ const graphApp = {
       else if (!upper && tr.t !== undefined) upper = (fn.type === 'r=' ? 'θ=' : 'T=') + fmt(tr.t) + (fn.type === 'r=' ? '  r=' + fmt(p.r) : '');
       else if (!upper && S.deriv === 'On' && tr.x !== undefined) upper = 'dY/dX=' + fmt(snapNice(nDeriv(fnGet(s.fns[tr.k]).f, tr.x)));
       if (!s.input) this.coords('X=' + fmt(p.x), 'Y=' + fmt(p.y), upper);
+    } else if (s.st === 'modify') {
+      const m = s.mod, rows = [...m.vars.map((n) => n + '=' + fmt((mem.vars[n] || RI(0)).v)), 'Step=' + fmt(m.step)];
+      const first = Math.max(0, Math.min(m.i - 2, rows.length - 5));
+      const shown = rows.slice(first, first + 5);
+      const y0 = LH - 2 - shown.length * 17;
+      shown.forEach((t, j) => {
+        const on = first + j === m.i, w = lcd.miniW(t, { px: 14 }) + 8;
+        lcd.rect(1, y0 + j * 17, w, 17, on ? '#000' : '#fff');
+        lcd.mini(5, y0 + j * 17 + 1, t, { px: 14, color: on ? '#fff' : '#000' });
+      });
+      if (s.fns.length) this.caption(0);
     } else if (s.st === 'pick') {
       this.caption(s.fns.indexOf(s.pick.c[s.pick.i]), true);
     } else if (s.st === 'result') {
@@ -609,6 +659,8 @@ const graphApp = {
         g.strokeRect(Math.min(bx, px) + .5, Math.min(by, py) + .5, Math.abs(px - bx), Math.abs(py - by));
         g.setLineDash([]);
       }
+      if (s.st === 'line2') lcd.line(X2P(s.box.x), Y2P(s.box.y), px, py, '#666', 1);
+      if (s.st === 'circ2') { const rr = Math.hypot(px - X2P(s.box.x), py - Y2P(s.box.y)); g.strokeStyle = '#666'; g.lineWidth = 1; g.beginPath(); g.arc(X2P(s.box.x), Y2P(s.box.y), rr, 0, Math.PI * 2); g.stroke(); }
       if (s.st === 'vline') lcd.line(px, GA.top, px, GA.bottom, '#666', 1);
       if (s.st === 'hline') lcd.line(0, py, LW, py, '#666', 1);
       this.pointer(px, py, '#000');
@@ -627,7 +679,7 @@ const graphApp = {
   save() {
     return {
       fn: mem.fn.map((f) => ({ type: f.type, row: f.row, row2: f.row2, math: f.math, sel: f.sel, color: f.color, style: f.style })),
-      vw: { ...VW }, zf: { ...ZOOM_FACT }
+      vw: { ...VW }, zf: { ...ZOOM_FACT }, vmem: VW_MEM.slice()
     };
   },
   load(st) {
@@ -643,6 +695,7 @@ const graphApp = {
     if (st.vw) for (const k in VW) if (Number.isFinite(st.vw[k])) VW[k] = st.vw[k];
     if (st.zf && st.zf.x > 0 && st.zf.y > 0) { ZOOM_FACT.x = st.zf.x; ZOOM_FACT.y = st.zf.y; }
     if (!vwOk()) vwSet('INITIAL');
+    if (Array.isArray(st.vmem)) st.vmem.slice(0, 6).forEach((m, n) => { if (m && Object.keys(VW).every((k) => Number.isFinite(m[k]))) VW_MEM[n] = m; });
   }
 };
 UI.apps.graph = graphApp;

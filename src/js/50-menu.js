@@ -195,7 +195,7 @@ UI.apps.menu = mainMenu;
 const SETUP_DEF = {
   io: ['Input/Output', ['Math', 'Line']],
   mode: ['Mode', ['Comp']],
-  cplx: ['Complex Mode', ['Real']],
+  cplx: ['Complex Mode', ['Real', 'a+bi', 'r∠θ']],
   frac: ['Frac Result', ['d/c', 'ab/c']],
   funcType: ['Func Type', ['Y=', 'r=', 'Param', 'X=', 'Y>', 'Y<', 'Y≥', 'Y≤']],
   drawType: ['Draw Type', ['Connect', 'Plot']],

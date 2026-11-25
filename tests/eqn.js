@@ -1,8 +1,8 @@
 // Тесты режима Equation: node tests/eqn.js        — расчёты (системы, многочлены, Solver), без браузера
 //                         node tests/eqn.js ui     — ещё и сценарии «с клавиш» в браузере (нужен собранный index.html)
 const { load, makeTok, makeRowStr, runner } = require('./lib');
-const core = load(['00-util.js', '10-num.js', '15-numeric.js', '20-parse.js', '40-ui.js', '85-eqn.js'],
-  ['G', 'S', 'mem', 'PRE', 'FNA', 'evalTokens', 'compileTokens', 'numRow', 'CalcError', 'eqnLinear', 'eqnPoly', 'eqnQuad', 'eqnSolve', 'eqnVars', 'parse']);
+const core = load(['00-util.js', '10-num.js', '12-complex.js', '15-numeric.js', '20-parse.js', '40-ui.js', '85-eqn.js'],
+  ['G', 'S', 'mem', 'PRE', 'FNA', 'evalTokens', 'compileTokens', 'numRow', 'valRow', 'CalcError', 'eqnLinear', 'eqnPoly', 'eqnQuad', 'eqnSolve', 'eqnVars', 'parse']);
 const { S, CalcError, eqnLinear, eqnPoly, eqnSolve } = core;
 const tok = makeTok(core), rs = makeRowStr(core);
 const t = runner();
@@ -63,6 +63,42 @@ pol(['1', '~2', '1'], '1 ; 1', 'кратный корень');
 pol(['4', '~4', '1'], '[1/2] ; [1/2]', 'кратный дробный корень');
 pol(['1', '0', '1'], '', 'нет вещественных корней');
 pol(['1', '1', '1'], '', 'нет вещественных корней: x²+x+1');
+// комплексные корни (Complex Mode не Real): второй аргумент eqnPoly
+function polC(coefs, want, what, mode) {
+  let got;
+  try { got = eqnPoly(coefs.map(N), true).map((x) => rs(core.valRow(x, mode || 'auto', true, 'rect'))).join(' ; '); } catch (e) { if (!(e instanceof CalcError)) throw e; got = e.type; }
+  t.eq(got, want, what || 'комплексные корни ' + coefs.join(' '));
+}
+polC(['1', '1', '1'], '−[1/2]+[√(3)/2]i ; −[1/2]−[√(3)/2]i');
+polC(['1', '0', '1'], 'i ; −i');
+polC(['1', '~2', '5'], '1+2i ; 1−2i');
+polC(['2', '2', '1'], '−[1/2]+[1/2]i ; −[1/2]−[1/2]i');
+polC(['~1', '2', '~5'], '1+2i ; 1−2i', 'a < 0: порядок тот же');
+polC(['1', '1', '1'], '−0.5+0.8660254038i ; −0.5−0.8660254038i', 'комплексные корни десятичной записью', 'dec');
+polC(['0.5', '0', '0.5'], 'i ; −i', 'десятичные коэффициенты');
+polC(['1', '~5', '6'], '3 ; 2', 'вещественные корни в комплексном режиме те же');
+polC(['1', '~2', '1'], '1 ; 1', 'кратный корень в комплексном режиме');
+polC(['1', '0', '0', '~1'], '1 ; −[1/2]+[√(3)/2]i ; −[1/2]−[√(3)/2]i', 'x³ = 1');
+polC(['1', '0', '0', '8'], '1+√(3)i ; 1−√(3)i ; −2', 'x³ = −8');
+polC(['1', '0', '1', '1'], '0.3411639019+1.1615414i ; 0.3411639019−1.1615414i ; −0.6823278038', 'x³+x+1');
+polC(['1', '0', '0', '0', '1'], '0.7071067812+0.7071067812i ; 0.7071067812−0.7071067812i ; −0.7071067812+0.7071067812i ; −0.7071067812−0.7071067812i', 'x⁴ = −1');
+polC(['1', '0', '2', '0', '1'], 'i ; i ; −i ; −i', '(x²+1)²: кратные комплексные корни');
+polC(['1', '0', '0', '0', '0', '~1'], '1 ; 0.3090169944+0.9510565163i ; 0.3090169944−0.9510565163i ; −0.8090169944+0.5877852523i ; −0.8090169944−0.5877852523i', 'x⁵ = 1');
+polC(['1.5', '0', '0', '1.5'], '0.5+0.8660254038i ; 0.5−0.8660254038i ; −1', 'приближённые коэффициенты, степень 3');
+{
+  // корни подставляются обратно: |p(z)| ≈ 0
+  const cs = ['1', '~2', '3', '~4', '5', '~6', '7'].map(N);
+  const zs = eqnPoly(cs, true);
+  t.eq(zs.length, 6, 'степень 6: шесть корней с учётом комплексных');
+  let worst = 0;
+  for (const z of zs) {
+    const x = z.cx ? z.re.v : z.v, y = z.cx ? z.im.v : 0;
+    let pr = 0, pi = 0;
+    for (const c of cs) { const nr = pr * x - pi * y + c.v; pi = pr * y + pi * x; pr = nr; }
+    worst = Math.max(worst, Math.hypot(pr, pi));
+  }
+  t.eq(worst < 1e-8, true, 'степень 6: корни обращают многочлен в ноль (невязка ' + worst.toExponential(1) + ')');
+}
 pol(['~1', '0', '4'], '−2 ; 2', 'a < 0: сначала корень с «+»');
 pol(['1', '~2.5', '1'], '2 ; 0.5', 'десятичные коэффициенты');
 pol(['1', '~2.5', '1'], '2 ; [1/2]', 'десятичные коэффициенты, точная запись', 'exact');
@@ -243,6 +279,12 @@ async function ui() {
   await has('F1 1 EXE NEG 1 EXE NEG 1 EXE', ['aX^2+bX+c=0', 'SOLVE'], 'коэффициенты квадратного уравнения');
   await has('F1', ['X1', 'X2', '(1+√(5))/(2)', '(1−√(5))/(2)', 'REPEAT'], 'корни (1±√5)/2');
   await has('EXIT 1 EXE 0 EXE 1 EXE F1', ['No Real Roots'], 'нет вещественных корней');
+  // Complex Mode: a+bi — те же коэффициенты (x²−x+1: курсор стоял на c) дают комплексные корни
+  await has('EXIT SHIFT MENU DOWN DOWN DOWN F2 EXIT F1', ['X1', 'X2', 'a+bi', 'REPEAT'], 'Complex Mode a+bi: комплексные корни вместо «No Real Roots»');
+  u.eq(await c.page.evaluate(() => { const v = window.__calc.UI.apps.eqn.res.vals; return v.length + ':' + v.map((z) => (z.cx ? z.re.v.toFixed(4) + ',' + z.im.v.toFixed(4) : 'real')).join(';'); }), '2:0.5000,0.8660;0.5000,-0.8660', 'корни 1/2 ± √3/2·i');
+  await has('EXIT 1 EXE 1 EXE 1 EXE F1', ['(1)/(2)', '(√(3))/(2)', 'i'], 'корни x²+x+1 с дробями и корнем');
+  await has('SD', ['0.5', '0.8660254038'], 'S⇔D для комплексных корней');
+  await has('SHIFT MENU DOWN DOWN DOWN F1 EXIT EXIT F1', ['No Real Roots'], 'Complex Mode Real: снова «No Real Roots»');
   await has('EXIT LEFT LEFT 0 EXE F1', ['Ma ERROR'], 'старший коэффициент 0');
   await has('EXIT EXIT F2 1 EXE NEG 6 EXE 1 1 EXE NEG 6 EXE F1', ['aX^3+bX^2+cX+d=0', 'X1', 'X2', 'X3'], 'кубическое уравнение');
   await has('EXIT EXIT EXIT F3', ['Eq:'], 'Solver: ввод уравнения');

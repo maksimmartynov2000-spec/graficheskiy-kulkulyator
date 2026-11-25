@@ -51,7 +51,38 @@ class MathEd {
     this.lay = null;                  // последняя раскладка (для ▲▼ по ближайшему месту)
   }
   get empty() { return !this.root.length; }
-  clear() { this.root = []; this.row = this.root; this.i = 0; }
+  clear() { if (this.root.length) this.snap(); this.root = []; this.row = this.root; this.i = 0; }
+
+  // Путь к курсору от корня: шаги [номер в строке, место шаблона] и позиция в последней строке
+  path() {
+    const steps = [];
+    for (let row = this.row; ;) {
+      const p = this.parentOf(row);
+      if (!p) break;
+      steps.unshift([p.idx, p.slot]);
+      row = p.row;
+    }
+    return { steps, i: this.i };
+  }
+  goto(path) {
+    let row = this.root;
+    for (const [idx, slot] of path.steps) {
+      const it = row[idx];
+      if (!it || typeof it !== 'object' || !it.s[slot]) break;
+      row = it.s[slot];
+    }
+    this.row = row; this.i = Math.min(path.i, row.length);
+  }
+  // UNDO: запоминаем выражение перед удалением и возвращаем по ALPHA DEL (повторный UNDO — вернуть как было)
+  snap() { this.undoBuf = { root: cloneRow(this.root), path: this.path() }; }
+  undo() {
+    if (!this.undoBuf) return false;
+    const now = { root: cloneRow(this.root), path: this.path() };
+    this.root = this.undoBuf.root;
+    this.goto(this.undoBuf.path);
+    this.undoBuf = now;
+    return true;
+  }
   set(row, atStart) { this.root = cloneRow(row || []); this.row = this.root; this.i = atStart ? 0 : this.root.length; }
   get() { return cloneRow(this.root); }
   tokens() { return rowTokens(this.root); }
@@ -130,6 +161,7 @@ class MathEd {
     }
   }
   del() {
+    if (this.root.length) this.snap();
     if (this.i > 0) {
       const it = this.row[this.i - 1];
       if (typeof it === 'object' && !it.s.every((r) => !r.length)) {

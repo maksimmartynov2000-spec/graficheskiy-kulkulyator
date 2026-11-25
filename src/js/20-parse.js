@@ -9,7 +9,8 @@ class Mat { constructor(m) { this.m = m; } }
 const DONE = { done: true };
 const isL = (x) => x instanceof LList;
 const isM = (x) => x instanceof Mat;
-const needNum = (x) => { if (!isNum(x)) fail('Argument ERROR'); return x; };
+const needNum = (x) => { if (isCx(x)) fail('Non-Real ERROR'); if (!isNum(x)) fail('Argument ERROR'); return x; };
+const needScalar = (x) => { if (!isNum(x) && !isCx(x)) fail('Argument ERROR'); return x; };   // число, в том числе комплексное
 
 const INVS = G.INV + ' ';
 const PRE = new Map([
@@ -21,7 +22,8 @@ const PRE = new Map([
   ['√', 'sqrt'], [G.CBRT, 'cbrt'], [G.NEG, 'neg'],
   ['Abs ', 'abs'], ['Int ', 'int'], ['Frac ', 'frac'], ['Intg ', 'intg'], ['Not ', 'not'],
   ['Sum ', 'sum'], ['Prod ', 'prod'], ['Dim ', 'dim'], ['Cuml ', 'cuml'], ['Percent ', 'percent'], ['ΔList ', 'dlist'],
-  ['Det ', 'det'], ['Trn ', 'trn'], ['Identity ', 'ident'], ['Ref ', 'ref'], ['Rref ', 'rref']
+  ['Det ', 'det'], ['Trn ', 'trn'], ['Identity ', 'ident'], ['Ref ', 'ref'], ['Rref ', 'rref'],
+  ['Arg ', 'arg'], ['Conjg ', 'conjg'], ['ReP ', 'rep'], ['ImP ', 'imp']
 ]);
 const POST = new Map([[G.SQ, 'sq'], [G.INV, 'inv'], ['!', 'fact'], ['°', 'deg'], [G.RAD, 'rad'], [G.GRA, 'gra'], ['%', 'pct']]);
 const FNA = new Map([
@@ -39,6 +41,11 @@ const FNA = new Map([
   ['BinomialPD(', 'binpd'], ['BinomialCD(', 'bincd'], ['PoissonPD(', 'poipd'], ['PoissonCD(', 'poicd']
 ]);
 const RELS = new Set(['=', '≠', '>', '<', '≥', '≤']);
+// Величины из меню VARS (Xmin, x̄, Strt…): знак → функция, дающая текущее значение. Заполняется в 61-vars.js
+const EXT_VARS = new Map();
+const CX_POLAR = '▶r∠θ', CX_RECT = '▶a+bi';   // команды в конце выражения: показать ответ как r∠θ или как a+bi
+let cxHint = null;                            // какой вид ответа запрошен в последнем расчёте ('polar' | 'rect')
+const cxTakeHint = () => { const h = cxHint; cxHint = null; return h; };   // забрать запрос и сбросить его
 const varOf = (t) => (t === 'x' ? 'X' : t !== undefined && Object.prototype.hasOwnProperty.call(VIX, t) ? t : undefined);
 const isDigit = (t) => t.length === 1 && t >= '0' && t <= '9';
 
@@ -64,6 +71,10 @@ function lex(toks) {
         exp = sg * Number(es);
       }
       out.push({ n: numFromLiteral(mant, exp), pos: start });
+    } else if (EXT_VARS.has(t)) {
+      const v = Number(EXT_VARS.get(t)()) || 0;
+      out.push({ n: R(v, Number.isInteger(v) && Math.abs(v) < 1e15 ? exInt(v) : null, false), pos: i });
+      i++;
     } else { out.push({ t, pos: i }); i++; }
   }
   return out;
@@ -77,20 +88,20 @@ function parse(toks) {
   const pos = () => (i < lx.length ? lx[i].pos : toks.length);
   const syn = () => fail('Syntax ERROR', pos());
   const eat = (t) => { if (i < lx.length && lx[i].t === t) { i++; return true; } return false; };
-  const atEnd = () => i >= lx.length || lx[i].t === '→';
+  const atEnd = () => i >= lx.length || lx[i].t === '→' || lx[i].t === CX_POLAR || lx[i].t === CX_RECT;
   const close = (t) => { if (!eat(t) && !atEnd()) syn(); };
 
   const startsL5 = () => {
     if (i >= lx.length) return false;
     const t = lx[i].t;
-    return t !== undefined && (varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV);
+    return t !== undefined && (varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === 'i');
   };
   const startsOperand = () => {
     if (i >= lx.length) return false;
     const l = lx[i];
     if (l.n) return true;
     const t = l.t;
-    return varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === '(' || t === '{' || t === '[' || t === 'List ' || t === 'Mat ' ||
+    return varOf(t) !== undefined || t === 'π' || t === 'Ans' || t === G.YV || t === 'i' || t === '(' || t === '{' || t === '[' || t === 'List ' || t === 'Mat ' ||
       t === 'Ran# ' || PRE.has(t) || FNA.has(t);
   };
 
@@ -117,7 +128,9 @@ function parse(toks) {
     let a = pImp7();
     for (;;) {
       const t = pt();
-      if (t === G.PERM || t === G.COMB) { i++; a = { k: 'bin', op: t === G.PERM ? 'nPr' : 'nCr', a, b: pImp7() }; } else return a;
+      if (t === G.PERM || t === G.COMB) { i++; a = { k: 'bin', op: t === G.PERM ? 'nPr' : 'nCr', a, b: pImp7() }; }
+      else if (t === '∠') { i++; a = { k: 'bin', op: '∠', a, b: pImp7() }; }      // полярная запись r∠θ
+      else return a;
     }
   }
   function pImp7() {                 // 2√3, 2(3), (1)(2), 2 sin 30
@@ -184,6 +197,7 @@ function parse(toks) {
     const t = l.t;
     if (varOf(t) !== undefined) { i++; return { k: 'var', n: varOf(t) }; }
     if (t === 'π') { i++; return { k: 'pi' }; }
+    if (t === 'i') { i++; return { k: 'imag' }; }
     if (t === 'Ans') { i++; return { k: 'ans' }; }
     if (t === '(') { i++; const e = pRel(); close(')'); return e; }
     if (t === '{') {
@@ -243,7 +257,8 @@ function parse(toks) {
   }
 
   if (!lx.length) syn();
-  const e = pRel();
+  let e = pRel();
+  if (pt() === CX_POLAR || pt() === CX_RECT) { e = { k: 'cxform', f: pt() === CX_POLAR ? 'polar' : 'rect', a: e }; i++; }
   if (eat('→')) {
     const tg = pPost();
     if (i < lx.length || !['var', 'listref', 'matref', 'idx'].includes(tg.k)) syn();
@@ -312,9 +327,11 @@ function angMark(f, x) {             // 30° в текущих единицах 
 
 // ---------- функции одного и двух чисел (с точными формами) ----------
 function s1(f, x) {
+  if (isCx(x)) return cx1(f, x);
   switch (f) {
     case 'neg': return sNeg(x);
-    case 'sqrt': return sSqrt(x);
+    case 'sqrt': if (x.v < 0 && S.cplx !== 'Real') return cx1(f, x); return sSqrt(x);
+    case 'arg': case 'conjg': case 'rep': case 'imp': return cx1(f, x);
     case 'abs': return x.v < 0 ? sNeg(x) : x;
     case 'sq': return sMul(x, x);
     case 'inv': return sDiv(RI(1), x);
@@ -329,7 +346,9 @@ function s1(f, x) {
     case 'sin': case 'cos': case 'tan': { const e = trigExact(f, x); if (e) return e; break; }
     case 'asin': case 'acos': case 'atan': { const e = atrigExact(f, x); if (e) return e; break; }
     case 'deg': case 'rad': case 'gra': return angMark(f, x);
-    case 'log': case 'ln': if (x.v < 0) fail('Non-Real ERROR'); break;
+    case 'log': case 'ln':
+      if (x.v < 0) { if (S.cplx !== 'Real') return cx1(f, x); fail('Non-Real ERROR'); }
+      break;
     default:
   }
   const fn = F1[f];
@@ -337,6 +356,9 @@ function s1(f, x) {
   return RF(fn(x.v), !!x.ex, x.dec);
 }
 function s2(op, a, b) {
+  if (isCx(a) || isCx(b) || op === '∠') return cx2(op, a, b);
+  // в комплексном режиме степень отрицательного числа с нецелым показателем — главное комплексное значение
+  if (S.cplx !== 'Real' && ((op === '^' && a.v < 0 && !Number.isInteger(b.v)) || (op === 'xrt' && b.v < 0 && !(Number.isInteger(a.v) && a.v % 2)))) return cx2(op, a, b);
   switch (op) {
     case '+': return sAdd(a, b);
     case '−': return sSub(a, b);
@@ -353,16 +375,22 @@ function s2(op, a, b) {
 }
 
 // ---------- списки ----------
-function zipL(a, b, f) {
+// need — проверка элементов: needNum (только вещественные, по умолчанию) или needScalar (и комплексные)
+function zipL(a, b, f, need) {
+  need = need || needNum;
   if (isL(a) && isL(b)) {
     if (a.a.length !== b.a.length) fail('Dimension ERROR');
-    return new LList(a.a.map((x, i) => f(x, b.a[i])));
+    return new LList(a.a.map((x, i) => f(need(x), need(b.a[i]))));
   }
-  if (isL(a)) return new LList(a.a.map((x) => f(x, needNum(b))));
-  if (isL(b)) return new LList(b.a.map((y) => f(needNum(a), y)));
-  return f(needNum(a), needNum(b));
+  if (isL(a)) { need(b); return new LList(a.a.map((x) => f(need(x), b))); }
+  if (isL(b)) { need(a); return new LList(b.a.map((y) => f(a, need(y)))); }
+  return f(need(a), need(b));
 }
-const needList = (x) => { if (!isL(x)) fail('Argument ERROR'); return x.a; };
+const needList = (x) => {
+  if (!isL(x)) fail('Argument ERROR');
+  if (x.a.some(isCx)) fail('Complex Number In List');
+  return x.a;
+};
 const fvals = (a) => a.map((x) => x.v);
 
 function listStats(xs, fs) {          // среднее, медиана и т. д. с частотами
@@ -399,7 +427,7 @@ function matMul(A, B) {
     m.push([]);
     for (let j = 0; j < c2; j++) {
       let s = RI(0);
-      for (let k = 0; k < c; k++) s = sAdd(s, sMul(A.m[i][k], B.m[k][j]));
+      for (let k = 0; k < c; k++) s = s2('+', s, s2('×', A.m[i][k], B.m[k][j]));
       m[i].push(s);
     }
   }
@@ -408,6 +436,7 @@ function matMul(A, B) {
 const matIdent = (n) => new Mat(Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => RI(i === j ? 1 : 0))));
 // Приведение к ступенчатому виду; возвращает {m, det, rank}
 function matElim(A, reduce, ncols) {
+  if (A.m.some((r) => r.some(isCx))) fail('Complex Number In Matrix');
   const m = A.m.map((r) => r.slice());
   const rows = m.length, cols = m[0].length;
   let det = RI(1), row = 0;
@@ -449,7 +478,7 @@ function matPow(A, k) {
 
 // ---------- вычисление ----------
 const getVar = (n) => mem.vars[n] || RI(0);
-function setVar(n, x) { mem.vars[n] = x; fv[VIX[n]] = x.v; }
+function setVar(n, x) { mem.vars[n] = x; fv[VIX[n]] = isCx(x) ? NaN : x.v; }
 function getList(n) {
   const a = n === 'Ans' ? mem.listAns : mem.lists[n - 1];
   if (!a || !a.length) fail('Dimension ERROR');
@@ -477,6 +506,8 @@ function evalAst(n) {
     case 'var': return getVar(n.n);
     case 'pi': return RX(exPi());
     case 'ans': return mem.ans || RI(0);
+    case 'imag': return CX(RI(0), RI(1));
+    case 'cxform': { const v = evalAst(n.a); cxHint = n.f; return v; }
     case 'pre': return evPre(n.f, evalAst(n.a));
     case 'post': {
       const x = evalAst(n.a);
@@ -485,15 +516,15 @@ function evalAst(n) {
         if (n.f === 'inv') return matInv(x);
         fail('Argument ERROR');
       }
-      return isL(x) ? new LList(x.a.map((q) => s1(n.f, q))) : s1(n.f, needNum(x));
+      return isL(x) ? new LList(x.a.map((q) => s1(n.f, q))) : s1(n.f, needScalar(x));
     }
     case 'bin': return evBin(n.op, evalAst(n.a), evalAst(n.b));
     case 'mixed': {
       const a = needNum(evalAst(n.a)), b = needNum(evalAst(n.b)), c = needNum(evalAst(n.c));
       return a.v < 0 ? sSub(a, sDiv(b, c)) : sAdd(a, sDiv(b, c));
     }
-    case 'list': return new LList(n.items.map((q) => needNum(evalAst(q))));
-    case 'mat': return new Mat(n.rows.map((r) => r.map((q) => needNum(evalAst(q)))));
+    case 'list': return new LList(n.items.map((q) => needScalar(evalAst(q))));
+    case 'mat': return new Mat(n.rows.map((r) => r.map((q) => needScalar(evalAst(q)))));
     case 'listref': return getList(n.n);
     case 'matref': return getMat(n.n);
     case 'idx': {
@@ -514,12 +545,14 @@ function evalAst(n) {
     }
     case 'sto': {
       const v = evalAst(n.a), tg = n.tg;
-      if (tg.k === 'var') setVar(tg.n, needNum(v));
+      if (tg.k === 'var') setVar(tg.n, needScalar(v));
       else if (tg.k === 'listref') {
         if (!isL(v) || tg.n === 'Ans') fail('Syntax ERROR');
+        if (v.a.some(isCx)) fail('Complex Number In List');        // редактор списков работает только с вещественными
         mem.lists[tg.n - 1] = v.a.slice();
       } else if (tg.k === 'matref') {
         if (!isM(v) || tg.n === 'Ans') fail('Syntax ERROR');
+        if (v.m.some((r) => r.some(isCx))) fail('Complex Number In Matrix');
         mem.mats[tg.n] = v.m.map((r) => r.slice());
       } else {
         const p = needNum(evalAst(tg.i)).v;
@@ -549,6 +582,7 @@ function evPre(f, x) {
     }
     case 'dim':
       if (isM(x)) return new LList(mDim(x).map(RI));
+      if (isL(x)) return RI(x.a.length);
       return RI(needList(x).length);
     case 'cuml': { let s = RI(0); return new LList(needList(x).map((q) => (s = sAdd(s, q)))); }
     case 'percent': { const a = needList(x), s = a.reduce((p, q) => sAdd(p, q), RI(0)); return new LList(a.map((q) => sDiv(sMul(q, RI(100)), s))); }
@@ -560,32 +594,30 @@ function evPre(f, x) {
     default:
   }
   if (isM(x)) {
-    if (f === 'neg') return new Mat(x.m.map((r) => r.map(sNeg)));
+    if (f === 'neg') return new Mat(x.m.map((r) => r.map((q) => s1('neg', q))));
     if (f === 'abs') return new Mat(x.m.map((r) => r.map((q) => s1('abs', q))));
     fail('Argument ERROR');
   }
-  return isL(x) ? new LList(x.a.map((q) => s1(f, q))) : s1(f, needNum(x));
+  return isL(x) ? new LList(x.a.map((q) => s1(f, q))) : s1(f, needScalar(x));
 }
 
 function evBin(op, a, b) {
   if (isM(a) || isM(b)) {
     if (isL(a) || isL(b)) fail('Argument ERROR');
     if (isM(a) && isM(b)) {
-      if (op === '+') return matAdd(a, b, sAdd);
-      if (op === '−') return matAdd(a, b, sSub);
+      if (op === '+' || op === '−') return matAdd(a, b, (x, y) => s2(op, x, y));
       if (op === '×') return matMul(a, b);
       fail('Argument ERROR');
     }
     if (isM(a)) {
-      if (op === '×') return new Mat(a.m.map((r) => r.map((x) => sMul(x, b))));
-      if (op === '÷') return new Mat(a.m.map((r) => r.map((x) => sDiv(x, b))));
-      if (op === '^') return matPow(a, b.v);
+      if (op === '×' || op === '÷') { needScalar(b); return new Mat(a.m.map((r) => r.map((x) => s2(op, x, b)))); }
+      if (op === '^') return matPow(a, needNum(b).v);
       fail('Argument ERROR');
     }
-    if (op === '×') return new Mat(b.m.map((r) => r.map((x) => sMul(a, x))));
+    if (op === '×') { needScalar(a); return new Mat(b.m.map((r) => r.map((x) => s2('×', a, x)))); }
     fail('Argument ERROR');
   }
-  return zipL(a, b, (x, y) => s2(op, x, y));
+  return zipL(a, b, (x, y) => s2(op, x, y), needScalar);
 }
 
 function evCall(n) {
@@ -657,7 +689,7 @@ function evCall(n) {
       try {
         for (let x = a; st.v > 0 ? x.v <= b.v + 1e-12 * Math.abs(b.v) : x.v >= b.v - 1e-12 * Math.abs(b.v); x = sAdd(x, st)) {
           setVar(name, x);
-          out.push(needNum(evalAst(A[0])));
+          out.push(needScalar(evalAst(A[0])));
         }
       } finally { setVar(name, saved || RI(0)); if (!saved) delete mem.vars[name]; }
       if (!out.length) fail('Ma ERROR');
@@ -746,7 +778,7 @@ function evCall(n) {
         const name = A[1].n, saved = mem.vars[name];
         let s = RI(0);
         try {
-          for (let k = a; k <= b; k += st) { setVar(name, RI(k)); s = sAdd(s, needNum(evalAst(A[0]))); }
+          for (let k = a; k <= b; k += st) { setVar(name, RI(k)); s = s2('+', s, needScalar(evalAst(A[0]))); }
         } finally { setVar(name, saved || RI(0)); if (!saved) delete mem.vars[name]; }
         return s;
       }
@@ -792,7 +824,7 @@ function compileAst(n) {
     case 'num': { const v = n.v.v; return () => v; }
     case 'var': { const ix = VIX[n.n]; return () => fv[ix]; }
     case 'pi': return () => Math.PI;
-    case 'ans': return () => (mem.ans ? mem.ans.v : 0);
+    case 'ans': return () => (mem.ans ? (isCx(mem.ans) ? NaN : mem.ans.v) : 0);
     case 'pre': case 'post': {
       const f = F1[n.f], a = compileAst(n.a);
       if (!f) fail('Syntax ERROR');
@@ -871,11 +903,13 @@ function compileAst(n) {
 const evalTokens = (toks) => evalAst(parse(toks));
 function compileTokens(toks, name) {     // → (x) => число; переменная по умолчанию X
   const f = compileAst(parse(toks)), ix = VIX[name || 'X'];
-  return (x) => { fv[ix] = x; return f(); };
+  // значение переменной после счёта возвращается: иначе fv расходится с mem.vars (X в Solver после таблицы)
+  return (x) => { const sv = fv[ix]; fv[ix] = x; const y = f(); fv[ix] = sv; return y; };
 }
 // Значение числового поля (V-Window, таблицы, списки): выражение → число
 function evalNumber(toks) {
   const v = evalTokens(toks);
+  if (isCx(v)) fail('Non-Real ERROR');
   if (!isNum(v)) fail('Syntax ERROR');
   return v;
 }

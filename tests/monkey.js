@@ -11,7 +11,8 @@ const { open } = require('./web');
     const pick = (a) => a[Math.floor(rnd() * a.length)];
     const keys = [...document.querySelectorAll('[data-k]')].map((el) => el.dataset.k);
     const common = ['EXE', 'EXE', 'EXIT', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'UP', 'DOWN', 'LEFT', 'RIGHT', '1', '2', '3', 'XTT', 'ADD', 'DOT', 'NEG'];
-    const modes = ['1', '2', '5', '7', 'XTT', 'SIN'];   // Run-Matrix, Statistics, Graph, Table, Equation, System
+    // Run-Matrix, Statistics, Graph, Dyna Graph, Table, Recursion, Conic Graphs, Equation, Financial, Memory, System
+    const modes = ['1', '2', '5', '6', '7', '8', '9', 'XTT', 'LN', 'TAN', 'SIN'];
     const log = [];
     let fails = 0;
     for (let i = 0; i < total; i++) {
