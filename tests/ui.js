@@ -128,6 +128,11 @@ const { open } = require('./web');
   ok((await vw()).includes('| 6.3 |'), 'клавиша «−» отдаляет: Xmax снова 6.3');
   await K('SHIFT F3 F3 EXIT');
   ok((await vw()).includes('| 10 |'), 'V-Window STANDRD: Xmax = 10');
+  // V-MEM: сохранить окно STANDRD, вернуть INITIAL, вызвать из памяти
+  await K('SHIFT F3 F4 F1 F2 F1 EXIT');
+  ok((await vw()).includes('| 6.3 |'), 'V-Window INITIAL после сохранения STANDRD');
+  await K('SHIFT F3 F4 F2 F2 EXIT');
+  ok((await vw()).includes('| 10 |'), 'V-MEM RECALL возвращает сохранённое окно');
   await K('SHIFT F3 F1 EXIT EXIT EXIT');   // V-Window → меню Zoom → список функций
   // ∫dx от −1 до 1 для x²−2: −10/3
   await K('F6 F5 F6 F3 EXE NEG 1 EXE EXE 1 EXE EXE');
@@ -157,6 +162,10 @@ const { open } = require('./web');
   eq(await ev(() => window.__calc.UI.apps.table.ys[0].join()), '2,-1,-2,-1,2', 'таблица: значения Y1');
   await K('DOWN DOWN 0 DOT 5 EXE');
   eq(await ev(() => window.__calc.UI.apps.table.ys[0][2]), -1.75, 'таблица: правка X пересчитывает строку');
+  await K('SHIFT MENU DOWN F1 EXIT');
+  await has("Y'1", 'таблица: при Derivative On появляется столбец производной');
+  eq(await ev(() => window.__calc.UI.apps.table.defs[1].vals[0]), -4, "таблица: Y'1(−2) = −4 для x²−2");
+  await K('SHIFT MENU DOWN F2 EXIT');
 
   // ---------- правка ввода: CLIP, PASTE, UNDO ----------
   await K('MENU 1 AC 1 2 ADD 3 SHIFT 8 LEFT LEFT F1 SHIFT 9 EXE');

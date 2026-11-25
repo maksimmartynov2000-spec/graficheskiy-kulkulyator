@@ -4,7 +4,22 @@ const SETUP_GRAPH = ['io', 'drawType', 'graphFunc', 'deriv', 'angle', 'coord', '
 
 // ---------- экран View Window ----------
 const VW_ROWS = [['Xmin', 'xmin'], [' max', 'xmax'], [' scale', 'xscl'], [' dot', 'dot'], ['Ymin', 'ymin'], [' max', 'ymax'], [' scale', 'yscl'], ['T' + 'θ min', 'tmin'], ['   max', 'tmax'], ['   ptch', 'tptch']];
+const VW_MEM = [null, null, null, null, null, null];   // V-MEM: шесть сохранённых окон
 function openVWindow(onClose) {
+  const slots = (fn) => VW_MEM.map((_, n) => mi('V-Win' + (n + 1), () => fn(n)));
+  const menu = new FMenu([
+    mi('INITIAL', () => vwSet('INITIAL')),
+    mi('TRIG', () => vwSet('TRIG')),
+    mi('STANDRD', () => vwSet('STANDRD')),
+    mi('V-MEM', [
+      mi('STORE', slots((n) => { VW_MEM[n] = { ...VW }; menu.reset(); })),
+      mi('RECALL', slots((n) => { if (!VW_MEM[n]) { errorBox('Memory ERROR'); return; } Object.assign(VW, VW_MEM[n]); menu.reset(); }))
+    ]),
+    mi('SQUARE', [
+      mi('Y-BASE', () => { const c = (VW.xmin + VW.xmax) / 2, h = yDot() * GA.w / 2; VW.xmin = r15(c - h); VW.xmax = r15(c + h); menu.reset(); }),
+      mi('X-BASE', () => { const c = (VW.ymin + VW.ymax) / 2, h = xDot() * GA.h / 2; VW.ymin = r15(c - h); VW.ymax = r15(c + h); menu.reset(); })
+    ])
+  ]);
   pushModal({
     sel: 0, top: 0, field: null,
     get(key) { return key === 'dot' ? xDot() : VW[key]; },
@@ -23,12 +38,10 @@ function openVWindow(onClose) {
         return;
       }
       const f = fIndex(k);
-      if (f === 0) { vwSet('INITIAL'); return; }
-      if (f === 1) { vwSet('TRIG'); return; }
-      if (f === 2) { vwSet('STANDRD'); return; }
+      if (f >= 0) { const it = menu.press(f); if (it && it.fn) it.fn(); return; }
       if (k.id === 'UP') this.move(-1);
       else if (k.id === 'DOWN' || k.id === 'EXE') this.move(1);
-      else if (k.id === 'EXIT') { popModal(); if (onClose) onClose(); }
+      else if (k.id === 'EXIT') { if (!menu.back()) { popModal(); if (onClose) onClose(); } }
       else if (startsNumber(k)) { this.field = new NumField(); this.field.key(k); }
     },
     draw() {
@@ -49,7 +62,7 @@ function openVWindow(onClose) {
       }
       if (this.top > 0) lcd.glyph('▲', LW - 9, 58, 12, '#000');
       if (this.top + 6 < VW_ROWS.length) lcd.glyph('▼', LW - 9, 184, 12, '#000');
-      lcd.fmenu([{ l: 'INITIAL', k: 'cmd' }, { l: 'TRIG', k: 'cmd' }, { l: 'STANDRD', k: 'cmd' }]);
+      lcd.fmenu(menu.labels());
     }
   });
 }
@@ -666,7 +679,7 @@ const graphApp = {
   save() {
     return {
       fn: mem.fn.map((f) => ({ type: f.type, row: f.row, row2: f.row2, math: f.math, sel: f.sel, color: f.color, style: f.style })),
-      vw: { ...VW }, zf: { ...ZOOM_FACT }
+      vw: { ...VW }, zf: { ...ZOOM_FACT }, vmem: VW_MEM.slice()
     };
   },
   load(st) {
@@ -682,6 +695,7 @@ const graphApp = {
     if (st.vw) for (const k in VW) if (Number.isFinite(st.vw[k])) VW[k] = st.vw[k];
     if (st.zf && st.zf.x > 0 && st.zf.y > 0) { ZOOM_FACT.x = st.zf.x; ZOOM_FACT.y = st.zf.y; }
     if (!vwOk()) vwSet('INITIAL');
+    if (Array.isArray(st.vmem)) st.vmem.slice(0, 6).forEach((m, n) => { if (m && Object.keys(VW).every((k) => Number.isFinite(m[k]))) VW_MEM[n] = m; });
   }
 };
 UI.apps.graph = graphApp;

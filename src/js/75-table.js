@@ -23,7 +23,7 @@ const tableApp = {
     }
     this.mode = 'list';
   },
-  setup() { return ['io', 'angle', 'disp']; },
+  setup() { return ['io', 'deriv', 'angle', 'disp']; },
   onSetup() { if (this.mode === 'table') this.fill(); },
 
   setRange() {
@@ -54,10 +54,20 @@ const tableApp = {
     ]);
     this.fill();
   },
+  // Столбцы таблицы: значения функций, а при Derivative: On — ещё и производные (Y'1, Y'2 …)
   fill() {
     this.ys = this.cols.map((i) => { const f = fnGet(i).f; return this.xs.map((x) => f(x)); });
+    this.defs = [];
+    this.cols.forEach((i, ci) => {
+      this.defs.push({ i, vals: this.ys[ci], label: fnLabel(i, 'Y=', 0) });
+      if (S.deriv === 'On') {
+        const f = fnGet(i).f;
+        this.defs.push({ i, vals: this.xs.map((x) => { const d = nDeriv(f, x); return Number.isFinite(d) ? snapNice(Number(d.toPrecision(11))) : NaN; }), label: "Y'" + (i + 1) });
+      }
+    });
+    this.c = Math.min(this.c, this.defs.length);
   },
-  value(r, c) { return c === 0 ? this.xs[r] : this.ys[c - 1][r]; },
+  value(r, c) { return c === 0 ? this.xs[r] : this.defs[c - 1].vals[r]; },
   rowDel() { if (this.xs.length > 1) { this.xs.splice(this.r, 1); this.r = Math.min(this.r, this.xs.length - 1); this.fill(); } this.menu.reset(); },
   rowIns(after) { this.xs.splice(this.r + after, 0, this.xs[this.r]); this.r += after; this.fill(); this.menu.reset(); },
   graph(connect) {
@@ -90,7 +100,7 @@ const tableApp = {
     }
     const f = fIndex(k);
     if (f >= 0) { const it = this.menu.press(f); if (it && it.fn) it.fn(); return; }
-    const nr = this.xs.length, nc = this.cols.length + 1;
+    const nr = this.xs.length, nc = this.defs.length + 1;
     switch (k.id) {
       case 'UP': this.r = (this.r + nr - 1) % nr; break;
       case 'DOWN': this.r = (this.r + 1) % nr; break;
@@ -118,12 +128,12 @@ const tableApp = {
     if (this.mode === 'list') { this.list.draw(); return; }
     statusBar(stdTags());
     const CWD = 96;
-    const head = (ci) => (ci === 0 ? 'X' : fnLabel(this.cols[ci - 1], 'Y=', 0));
+    const head = (ci) => (ci === 0 ? 'X' : this.defs[ci - 1].label);
     const visible = [0];
-    for (let j = 0; j < 3 && this.left + j < this.cols.length; j++) visible.push(this.left + j + 1);
+    for (let j = 0; j < 3 && this.left + j < this.defs.length; j++) visible.push(this.left + j + 1);
     visible.forEach((ci, vx) => {
       const x = vx * CWD, h = head(ci);
-      lcd.text(x + (CWD - h.length * 18) / 2, 24, h, ci ? { color: COLORS[mem.fn[this.cols[ci - 1]].color] } : undefined);
+      lcd.text(x + (CWD - h.length * 18) / 2, 24, h, ci ? { color: COLORS[mem.fn[this.defs[ci - 1].i].color] } : undefined);
       for (let rr = 0; rr < 5; rr++) {
         const r = this.top + rr;
         if (r >= this.xs.length) break;
