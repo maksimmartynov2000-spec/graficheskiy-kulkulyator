@@ -17,7 +17,9 @@ function toast(text, ms) {
 }
 
 // ---------- состояние калькулятора: сохраняется после каждого нажатия ----------
+let saveOff = false;                  // тесты: «чистый запуск» — стереть память и больше не сохранять до перезагрузки
 function saveState() {
+  if (saveOff) return;
   const st = { v: 1, S: { ...S }, vars: mem.vars, ans: mem.ans, lists: mem.lists, listSub: mem.listSub, mats: mem.mats, app: UI.appId, apps: {} };
   for (const id in UI.apps) if (UI.apps[id].save) { try { st.apps[id] = UI.apps[id].save(); } catch (e) { /* режим не сохранился — не страшно */ } }
   store.set('state', st);
@@ -214,5 +216,6 @@ window.__calc = {
   press, UI, S, mem, lcd,
   keys(list) { for (const id of String(list).trim().split(/\s+/)) if (id) press(id); },
   text() { redraw(); return lcd.log.slice(); },
-  idle() { UI.lastKeyAt = 0; }
+  idle() { UI.lastKeyAt = 0; },
+  wipe() { saveOff = true; clearTimeout(saveTimer); try { localStorage.clear(); } catch (e) { /* нет хранилища */ } }
 };

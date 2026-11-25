@@ -9,7 +9,7 @@ const { open } = require('./web');
   const eq = (got, want, what) => ok(got === want, `${what}: получено «${got}», ожидалось «${want}»`);
   const near = (got, want, what) => ok(typeof got === 'number' && Math.abs(got - want) < 1e-9 * Math.max(1, Math.abs(want)), `${what}: получено ${got}, ожидалось ${want}`);
   const fresh = async () => {
-    await c.page.evaluate(() => { localStorage.clear(); });
+    await c.page.evaluate(() => window.__calc.wipe());
     await c.page.reload();
     await c.page.waitForFunction(() => window.__calc && document.querySelector('.calc.ready'));
   };
@@ -134,6 +134,22 @@ const { open } = require('./web');
   await has('∫dx=−3.333333333', '∫dx по графику');
   await K('EXIT EXIT');
 
+  // MODIFY: коэффициенты стрелками
+  await K('MENU 5 DOWN DOWN ALPHA XTT XTT SQR ADD ALPHA LOG EXE F5');
+  await has('Step=1', 'MODIFY показывает шаг');
+  await K('RIGHT RIGHT DOWN LEFT');
+  near(await ev(() => window.__calc.mem.vars.A.v), 2, 'MODIFY: ► увеличивает A');
+  near(await ev(() => window.__calc.mem.vars.B.v), -1, 'MODIFY: ◄ уменьшает B');
+  await K('DOWN LEFT UP UP RIGHT');
+  near(await ev(() => window.__calc.mem.vars.A.v), 2.1, 'MODIFY: шаг 0.1');
+  await K('EXIT UP UP');
+  // Trace: EXE отмечает точку; Sketch: отрезок
+  await K('F6 F1 EXE');
+  eq(await ev(() => window.__calc.UI.apps.graph.g.sketch.filter((q) => q.t === 'mark').length), 1, 'Trace: EXE оставляет отметку точки');
+  await K('EXIT F4 F6 F2 EXE RIGHT RIGHT UP EXE');
+  eq(await ev(() => window.__calc.UI.apps.graph.g.sketch.filter((q) => q.t === 'seg').length), 1, 'Sketch LINE: отрезок по двум точкам');
+  await K('F4 F1 EXIT EXIT');
+
   // ---------- Table ----------
   await K('MENU 7 F5 NEG 2 EXE 2 EXE 1 EXE EXIT F6');
   await has('FORMULA', 'таблица построена');
@@ -141,6 +157,18 @@ const { open } = require('./web');
   eq(await ev(() => window.__calc.UI.apps.table.ys[0].join()), '2,-1,-2,-1,2', 'таблица: значения Y1');
   await K('DOWN DOWN 0 DOT 5 EXE');
   eq(await ev(() => window.__calc.UI.apps.table.ys[0][2]), -1.75, 'таблица: правка X пересчитывает строку');
+
+  // ---------- правка ввода: CLIP, PASTE, UNDO ----------
+  await K('MENU 1 AC 1 2 ADD 3 SHIFT 8 LEFT LEFT F1 SHIFT 9 EXE');
+  near(await ans(), 12 + 3 + 3, 'CLIP/PASTE: «+3» скопировано и вставлено');
+  await K('7 7 DEL DEL ALPHA DEL EXE');
+  near(await ans(), 7, 'UNDO возвращает удалённый знак');
+
+  // ---------- Memory ----------
+  await K('MENU TAN');
+  await has('Main Memory', 'режим Memory открывается');
+  await K('F6 F1');
+  eq(await ev(() => Object.keys(window.__calc.mem.vars).length), 0, 'Memory: ALPHA MEM удаляется');
 
   // ---------- память и выключение ----------
   await K('MENU SHIFT AC');

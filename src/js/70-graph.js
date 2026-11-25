@@ -101,7 +101,7 @@ const graphApp = {
           mi('TYPE', [...FN_TYPES.slice(0, 4).map((t) => mi(t, () => { S.funcType = t; l.base.reset(); })), null,
             ...FN_TYPES.slice(4).map((t) => mi(t, () => { S.funcType = t; l.base.reset(); }))]),
           mi('TOOL', [{ l: 'STYLE', get sub() { return l.styleMenu(); } }, { l: 'COLOR', get sub() { return l.colorMenu(); } }]),
-          null,
+          mi('MODIFY', () => this.modify()),
           mi('DRAW', () => this.show())
         ]
       });
@@ -298,7 +298,25 @@ const graphApp = {
           this.follow();
           return true;
         }
+        if (k.id === 'EXE') {           // отметить точку: координаты остаются на графике
+          const p = this.point(s.tr);
+          if (Number.isFinite(p.x) && Number.isFinite(p.y)) s.sketch.push({ t: 'mark', x: p.x, y: p.y });
+          return true;
+        }
         return false;
+      case 'modify': {
+        const m = s.mod, onStep = m.i === m.vars.length;
+        const cur = () => (onStep ? m.step : (mem.vars[m.vars[m.i]] || RI(0)).v);
+        const put = (v) => { if (onStep) { if (v > 0) m.step = v; } else { setVar(m.vars[m.i], R(r15(v), null, true)); plotVer++; } };
+        if (k.id === 'UP') m.i = (m.i + m.vars.length) % (m.vars.length + 1);
+        else if (k.id === 'DOWN') m.i = (m.i + 1) % (m.vars.length + 1);
+        else if (k.id === 'LEFT') put(onStep ? m.step / 10 : cur() - m.step);
+        else if (k.id === 'RIGHT') put(onStep ? m.step * 10 : cur() + m.step);
+        else if (startsNumber(k)) this.askNumber((onStep ? 'Step' : m.vars[m.i]) + '=', k, put);
+        else if (k.id === 'EXIT' || k.id === 'AC') this.mode = 'list';
+        else return false;
+        return true;
+      }
       case 'pick': {
         const p = s.pick;
         if (k.id === 'UP') p.i = (p.i + p.c.length - 1) % p.c.length;
@@ -327,7 +345,7 @@ const graphApp = {
           return true;
         }
         return false;
-      case 'box1': case 'box2': case 'vline': case 'hline': {
+      case 'box1': case 'box2': case 'vline': case 'hline': case 'plot': case 'line1': case 'line2': case 'circ1': case 'circ2': {
         const d = { LEFT: [-1, 0], RIGHT: [1, 0], UP: [0, -1], DOWN: [0, 1] }[k.id];
         if (d) {
           const now = Date.now();
@@ -348,13 +366,32 @@ const graphApp = {
               plotVer++;
             }
             this.toView();
-          } else { s.sketch.push(s.st === 'vline' ? { t: 'v', x: r15(x) } : { t: 'h', y: r15(y) }); this.toView(); }
+          } else if (s.st === 'plot') s.sketch.push({ t: 'pt', x: r15(x), y: r15(y) });
+          else if (s.st === 'line1' || s.st === 'circ1') { s.box = { x, y }; s.st = s.st === 'line1' ? 'line2' : 'circ2'; }
+          else if (s.st === 'line2') { s.sketch.push({ t: 'seg', x1: r15(s.box.x), y1: r15(s.box.y), x2: r15(x), y2: r15(y) }); this.toView(); }
+          else if (s.st === 'circ2') { s.sketch.push({ t: 'circ', x: r15(s.box.x), y: r15(s.box.y), r: Math.hypot(x - s.box.x, y - s.box.y) }); this.toView(); }
+          else { s.sketch.push(s.st === 'vline' ? { t: 'v', x: r15(x) } : { t: 'h', y: r15(y) }); this.toView(); }
           return true;
         }
         return false;
       }
       default: return false;
     }
+  },
+
+  // ---------- MODIFY: менять коэффициенты и смотреть, как меняется график ----------
+  modify() {
+    this.show();
+    const s = this.g, names = new Set();
+    const walk = (n) => {
+      if (!n || typeof n !== 'object') return;
+      if (n.k === 'var' && !['X', 'Y', 'T', 'θ'].includes(n.n)) names.add(n.n);
+      for (const key in n) { const v = n[key]; if (Array.isArray(v)) v.forEach((q) => (Array.isArray(q) ? q.forEach(walk) : walk(q))); else if (v && typeof v === 'object' && key !== 'v') walk(v); }
+    };
+    for (const i of s.fns) { const fn = mem.fn[i]; walk(parse(rowTokens(fn.row))); if (fn.type === 'Param') walk(parse(rowTokens(fn.row2))); }
+    if (!names.size) { this.mode = 'list'; fail('No Variable'); }
+    s.st = 'modify';
+    s.mod = { vars: [...names].sort(), i: 0, step: 1 };
   },
 
   // ---------- G-Solv ----------
@@ -437,7 +474,9 @@ const graphApp = {
       mi('Norm', () => this.pickFn(this.yFns(), (i) => { this.startTrace('normal'); s.tr = this.newTr(s.fns.indexOf(i)); })),
       mi('Inverse', () => this.pickFn(this.yFns(), (i) => { s.sketch.push({ t: 'inv', i }); s.menu = null; })),
       null,
-      null, null, null,
+      mi('PLOT', () => { s.menu = null; s.st = 'plot'; s.ptr = { px: 192, py: 120 }; }),
+      mi('LINE', () => { s.menu = null; s.st = 'line1'; s.ptr = { px: 192, py: 120 }; }),
+      mi('Circle', () => { s.menu = null; s.st = 'circ1'; s.ptr = { px: 192, py: 120 }; }),
       mi('Vertical', () => { s.menu = null; s.st = 'vline'; s.ptr = { px: 192, py: 120 }; }),
       mi('Horz', () => { s.menu = null; s.st = 'hline'; s.ptr = { px: 192, py: 120 }; })
     ];
@@ -536,6 +575,9 @@ const graphApp = {
       if (sk.t === 'line') { g.moveTo(0, clampP(Y2P(sk.m * P2X(0) + sk.b))); g.lineTo(LW, clampP(Y2P(sk.m * P2X(LW) + sk.b))); }
       else if (sk.t === 'v') { g.moveTo(X2P(sk.x), GA.top); g.lineTo(X2P(sk.x), GA.bottom); }
       else if (sk.t === 'h') { g.moveTo(0, Y2P(sk.y)); g.lineTo(LW, Y2P(sk.y)); }
+      else if (sk.t === 'seg') { g.moveTo(clampP(X2P(sk.x1)), clampP(Y2P(sk.y1))); g.lineTo(clampP(X2P(sk.x2)), clampP(Y2P(sk.y2))); }
+      else if (sk.t === 'circ') { g.ellipse(X2P(sk.x), Y2P(sk.y), Math.min(4000, sk.r / xDot()), Math.min(4000, sk.r / yDot()), 0, 0, Math.PI * 2); }
+      else if (sk.t === 'pt' || sk.t === 'mark') { g.fillStyle = '#000'; g.fillRect(X2P(sk.x) - 1.5, Y2P(sk.y) - 1.5, 3, 3); }
       else if (sk.t === 'inv' && mem.fn[sk.i] && fnDefined(mem.fn[sk.i])) {
         g.strokeStyle = COLORS[mem.fn[sk.i].color]; g.setLineDash([4, 3]);
         const fq = fnGet(sk.i).f;
@@ -551,6 +593,13 @@ const graphApp = {
       g.stroke();
       g.setLineDash([]);
     }
+    for (const sk of s.sketch) {
+      if (sk.t !== 'mark') continue;
+      const t = '(' + fmtFit(sk.x, 7) + ', ' + fmtFit(sk.y, 7) + ')', w = lcd.miniW(t, { px: 11 });
+      const tx = Math.max(2, Math.min(LW - w - 2, X2P(sk.x) + 5)), ty = Math.max(GA.top + 1, Y2P(sk.y) - 15);
+      lcd.rect(tx - 1, ty, w + 2, 13, '#fff');
+      lcd.mini(tx, ty, t, { px: 11 });
+    }
     lcd.unclip();
 
     // состояние
@@ -565,6 +614,17 @@ const graphApp = {
       else if (!upper && tr.t !== undefined) upper = (fn.type === 'r=' ? 'θ=' : 'T=') + fmt(tr.t) + (fn.type === 'r=' ? '  r=' + fmt(p.r) : '');
       else if (!upper && S.deriv === 'On' && tr.x !== undefined) upper = 'dY/dX=' + fmt(snapNice(nDeriv(fnGet(s.fns[tr.k]).f, tr.x)));
       if (!s.input) this.coords('X=' + fmt(p.x), 'Y=' + fmt(p.y), upper);
+    } else if (s.st === 'modify') {
+      const m = s.mod, rows = [...m.vars.map((n) => n + '=' + fmt((mem.vars[n] || RI(0)).v)), 'Step=' + fmt(m.step)];
+      const first = Math.max(0, Math.min(m.i - 2, rows.length - 5));
+      const shown = rows.slice(first, first + 5);
+      const y0 = LH - 2 - shown.length * 17;
+      shown.forEach((t, j) => {
+        const on = first + j === m.i, w = lcd.miniW(t, { px: 14 }) + 8;
+        lcd.rect(1, y0 + j * 17, w, 17, on ? '#000' : '#fff');
+        lcd.mini(5, y0 + j * 17 + 1, t, { px: 14, color: on ? '#fff' : '#000' });
+      });
+      if (s.fns.length) this.caption(0);
     } else if (s.st === 'pick') {
       this.caption(s.fns.indexOf(s.pick.c[s.pick.i]), true);
     } else if (s.st === 'result') {
@@ -586,6 +646,8 @@ const graphApp = {
         g.strokeRect(Math.min(bx, px) + .5, Math.min(by, py) + .5, Math.abs(px - bx), Math.abs(py - by));
         g.setLineDash([]);
       }
+      if (s.st === 'line2') lcd.line(X2P(s.box.x), Y2P(s.box.y), px, py, '#666', 1);
+      if (s.st === 'circ2') { const rr = Math.hypot(px - X2P(s.box.x), py - Y2P(s.box.y)); g.strokeStyle = '#666'; g.lineWidth = 1; g.beginPath(); g.arc(X2P(s.box.x), Y2P(s.box.y), rr, 0, Math.PI * 2); g.stroke(); }
       if (s.st === 'vline') lcd.line(px, GA.top, px, GA.bottom, '#666', 1);
       if (s.st === 'hline') lcd.line(0, py, LW, py, '#666', 1);
       this.pointer(px, py, '#000');

@@ -62,6 +62,10 @@ function typeKey(ed, k, xvar) {
       case 'NEG': ed.ins('Ans'); return true;
       case '1': ed.ins('List '); return true;
       case '2': ed.ins('Mat '); return true;
+      case '8': openClip(ed); return true;                          // CLIP
+      case '9':                                                     // PASTE
+        if (UI.clip && (ed.math || UI.clip.every((t) => typeof t === 'string'))) for (const t of cloneRow(UI.clip)) { ed.row.splice(ed.i, 0, t); ed.i++; }
+        return true;
       default: return false;
     }
   }
@@ -92,6 +96,7 @@ function typeKey(ed, k, xvar) {
 }
 // Курсор и удаление. Возвращает true, если клавиша обработана
 function edNav(ed, k) {
+  if (k.alpha && k.id === 'DEL') { ed.undo(); return true; }      // UNDO
   if (k.shift || k.alpha) return false;
   switch (k.id) {
     case 'LEFT': ed.left(); return true;
@@ -102,6 +107,30 @@ function edNav(ed, k) {
     default: return false;
   }
 }
+// CLIP: ◄ ► выделяют часть строки, F1 копирует, F2 вырезает; вставка — SHIFT 9 (PASTE)
+function openClip(ed) {
+  if (ed.empty) return;
+  const row = ed.row;
+  ed.selA = ed.i;
+  const done = () => { ed.selA = null; popModal(); };
+  pushModal({
+    lock: true,
+    key(k) {
+      if (k.id === 'LEFT') { if (ed.i > 0) ed.i--; }
+      else if (k.id === 'RIGHT') { if (ed.i < row.length) ed.i++; }
+      else if (k.id === 'F1' || k.id === 'F2') {
+        const a = Math.min(ed.selA, ed.i), b = Math.max(ed.selA, ed.i);
+        if (b > a) {
+          UI.clip = cloneRow(row.slice(a, b));
+          if (k.id === 'F2') { ed.snap(); row.splice(a, b - a); ed.i = a; }
+        }
+        done();
+      } else if (k.id === 'EXIT' || k.id === 'AC') done();
+    },
+    draw() { lcd.rect(0, 192, LW, 24, '#fff'); lcd.fmenu([{ l: 'COPY', k: 'cmd' }, { l: 'CUT', k: 'cmd' }]); }
+  });
+}
+
 // Вставка пункта меню: знак, массив знаков или шаблон {tpl}
 function edInsert(ed, x) {
   if (x && x.tpl) {
@@ -194,6 +223,10 @@ function drawEd(ed, x, yc, width, o) {
   const r = edLayout(ed, o.sz || 0, width, ed.sx);
   ed.sx = r.sx;
   lcd.clip(x, yc - Math.max(r.lay.a, 12) - 2, width, Math.max(r.lay.a, 12) + Math.max(r.lay.d, 12) + 4);
+  if (ed.selA !== null && ed.selA !== undefined) {                // выделение для CLIP
+    const a = curOf(r.lay, ed.row, Math.min(ed.selA, ed.i)), b = curOf(r.lay, ed.row, Math.max(ed.selA, ed.i));
+    if (a && b && b.x > a.x) lcd.rect(x - r.sx + a.x, yc + a.y - a.h / 2 - 1, b.x - a.x, a.h + 2, '#a9c8ff');
+  }
   drawLay(r.lay, x - r.sx, yc, o.color);
   if (o.cursor !== false) UI.sawCursor = true;
   if (o.cursor !== false && UI.blink && r.c) {
