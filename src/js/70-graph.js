@@ -173,12 +173,7 @@ const graphApp = {
 
   // ---------- окно просмотра ----------
   keep() { this.g.prev = { ...VW }; },
-  pan(dx, dy) {
-    const sx = dx * xDot(), sy = dy * yDot();
-    VW.xmin = r15(VW.xmin + sx); VW.xmax = r15(VW.xmax + sx);
-    VW.ymin = r15(VW.ymin + sy); VW.ymax = r15(VW.ymax + sy);
-    plotVer++;
-  },
+  pan(dx, dy) { vwPan(dx, dy); plotVer++; },
   zoom(fx, fy, cx, cy) {
     this.keep();
     const s = this.g;
@@ -187,8 +182,7 @@ const graphApp = {
       cx = p ? p.x : (VW.xmin + VW.xmax) / 2;
       cy = p && Number.isFinite(p.y) ? p.y : (VW.ymin + VW.ymax) / 2;
     }
-    const hw = (VW.xmax - VW.xmin) / 2 / fx, hh = (VW.ymax - VW.ymin) / 2 / fy;
-    Object.assign(VW, { xmin: r15(cx - hw), xmax: r15(cx + hw), ymin: r15(cy - hh), ymax: r15(cy + hh) });
+    vwZoom(fx, fy, cx, cy);
     plotVer++;
   },
   zoomMenu() {
@@ -497,28 +491,11 @@ const graphApp = {
     g.restore();
     strokePts(pts, color, rel === '>' || rel === '<' ? 'Broken' : fn.style);
   },
-  pointer(px, py, color) {
-    const g = lcd.g;
-    UI.sawCursor = true;
-    if (!UI.blink) return;
-    g.lineCap = 'butt';
-    for (const [c, w] of [['#fff', 4], [color || '#000', 1.6]]) {
-      g.strokeStyle = c; g.lineWidth = w;
-      g.beginPath(); g.moveTo(px - 8, py); g.lineTo(px + 8, py); g.moveTo(px, py - 8); g.lineTo(px, py + 8); g.stroke();
-      g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.stroke();
-    }
-  },
+  pointer(px, py, color) { drawPointer(px, py, color); },
   // Подпись внизу: «X=…» слева, «Y=…» справа; строка выше — для пометок
   coords(a, b, upper) {
-    const y = LH - 17 - (this.g.menu ? 24 : 0);
-    if (upper) {
-      const w = lcd.miniW(upper, { px: 14 });
-      lcd.rect(1, y - 17, w + 6, 17, '#fff');
-      lcd.mini(4, y - 16, upper, { px: 14 });
-    }
-    if (S.coord === 'Off' && !this.g.input) return;
-    if (a) { const w = lcd.miniW(a, { px: 14 }); lcd.rect(1, y, w + 6, 17, '#fff'); lcd.mini(4, y + 1, a, { px: 14 }); }
-    if (b) { const w = lcd.miniW(b, { px: 14 }); lcd.rect(193, y, w + 6, 17, '#fff'); lcd.mini(196, y + 1, b, { px: 14 }); }
+    const off = S.coord === 'Off' && !this.g.input;
+    drawCoords(off ? null : a, off ? null : b, upper, !!this.g.menu);
   },
   caption(k, hilite) {
     if (S.graphFunc === 'Off' && !hilite) return;

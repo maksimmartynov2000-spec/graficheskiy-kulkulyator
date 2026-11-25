@@ -1,8 +1,8 @@
 // Работа без интернета: хранит копию страницы и значков.
 // Обычный запуск — сразу из копии (и тихо обновляем её из сети);
 // проверка обновления (?upd=…) всегда идёт в сеть; переход на новую сборку (?v=…) — из сети с запасным вариантом из копии.
-const CACHE = 'graph-calc-v1';
-const FILES = ['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const CACHE = 'graph-calc-v2';
+const FILES = ['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

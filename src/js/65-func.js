@@ -170,6 +170,43 @@ function drawAxes() {
   }
 }
 
+// Сдвиг окна на dx, dy точек экрана
+function vwPan(dx, dy) {
+  const sx = dx * xDot(), sy = dy * yDot();
+  VW.xmin = r15(VW.xmin + sx); VW.xmax = r15(VW.xmax + sx);
+  VW.ymin = r15(VW.ymin + sy); VW.ymax = r15(VW.ymax + sy);
+}
+// Увеличение в fx, fy раз вокруг точки (cx, cy); без точки — вокруг середины окна
+function vwZoom(fx, fy, cx, cy) {
+  if (cx === undefined) cx = (VW.xmin + VW.xmax) / 2;
+  if (cy === undefined) cy = (VW.ymin + VW.ymax) / 2;
+  const hw = (VW.xmax - VW.xmin) / 2 / fx, hh = (VW.ymax - VW.ymin) / 2 / fy;
+  Object.assign(VW, { xmin: r15(cx - hw), xmax: r15(cx + hw), ymin: r15(cy - hh), ymax: r15(cy + hh) });
+}
+// Мигающий указатель-перекрестие в точке экрана
+function drawPointer(px, py, color) {
+  const g = lcd.g;
+  UI.sawCursor = true;
+  if (!UI.blink) return;
+  g.lineCap = 'butt';
+  for (const [c, w] of [['#fff', 4], [color || '#000', 1.6]]) {
+    g.strokeStyle = c; g.lineWidth = w;
+    g.beginPath(); g.moveTo(px - 8, py); g.lineTo(px + 8, py); g.moveTo(px, py - 8); g.lineTo(px, py + 8); g.stroke();
+    g.beginPath(); g.arc(px, py, 3.2, 0, Math.PI * 2); g.stroke();
+  }
+}
+// Подписи внизу графика: a — слева, b — справа, upper — строкой выше; menu — показано ли меню F1–F6
+function drawCoords(a, b, upper, menu) {
+  const y = LH - 17 - (menu ? 24 : 0);
+  if (upper) {
+    const w = lcd.miniW(upper, { px: 14 });
+    lcd.rect(1, y - 17, w + 6, 17, '#fff');
+    lcd.mini(4, y - 16, upper, { px: 14 });
+  }
+  if (a) { const w = lcd.miniW(a, { px: 14 }); lcd.rect(1, y, w + 6, 17, '#fff'); lcd.mini(4, y + 1, a, { px: 14 }); }
+  if (b) { const w = lcd.miniW(b, { px: 14 }); lcd.rect(193, y, w + 6, 17, '#fff'); lcd.mini(196, y + 1, b, { px: 14 }); }
+}
+
 // Подпись функции мелким шрифтом (для экрана графика): «Y1=x²−2»
 function fnCaption(i, x, y, color, part) {
   const fn = mem.fn[i];

@@ -10,7 +10,7 @@ const ROOT = path.resolve(__dirname, '..');
 const WORK = path.join(ROOT, '.work');
 const SITE = path.join(WORK, 'site');     // копия сайта: в ней меняем метку, чтобы изобразить «вышла новая версия»
 fs.mkdirSync(SITE, { recursive: true });
-const FILES = ['sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const FILES = ['sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 for (const f of FILES) fs.copyFileSync(path.join(ROOT, f), path.join(SITE, f));
 const SRC = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const put = (build) => fs.writeFileSync(path.join(SITE, 'index.html'), SRC.replace(/(name="app-build" content=")[^"]*/, '$1' + build));
